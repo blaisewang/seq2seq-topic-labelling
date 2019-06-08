@@ -105,5 +105,9 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+# project settings
 .idea
 
+# dataset
+*.csv
+*.txt
