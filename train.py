@@ -1,7 +1,10 @@
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import csv
 
 import numpy as np
 from gensim.models import Word2Vec
+from keras.callbacks import EarlyStopping
 from keras.layers import Dense, LSTM, Input, Activation, Add, TimeDistributed, Flatten, Multiply
 from keras.models import Model
 from keras.optimizers import RMSprop
@@ -19,18 +22,25 @@ with open("data/topics_cleaned.csv", "r") as topics_in, open("data/labels_cleane
     for row in topic_reader:
         topics.append(row)
     for row in label_reader:
-        labels.append(row[0].split())
+        for term in row:
+            labels.append(term.split())
 
 # one-hot encoding
 vocabulary = []
 
-# for topic in topics:
-#     for term in topic:
-#         vocabulary.append(term)
+for topic in topics:
+    for word in topic:
+        vocabulary.append(word)
+
+t_w = set(vocabulary)
+l_w = []
 
 for label in labels:
-    for term in label:
-        vocabulary.append(term)
+    for word in label:
+        l_w.append(word)
+        vocabulary.append(word)
+
+print("%d common words" % len(t_w.intersection(set(l_w))))
 
 vocabulary = list(sorted(set(vocabulary)))
 
@@ -80,7 +90,6 @@ for index, y_word in enumerate(y):
 
 
 # start sequence
-
 def add_zeros(seq):
     return np.insert(seq, [0], [[0], ], axis=0)
 
@@ -89,9 +98,9 @@ y = np.array(list(map(add_zeros, y)))
 
 # RNN structure
 
-epochs = 20
-batch_size = 50
-learning_rate = 0.01
+epochs = 100
+batch_size = 5
+learning_rate = 0.001
 
 encoder_shape = np.shape(x[0])
 decoder_shape = np.shape(y[0])
@@ -137,8 +146,9 @@ rms_prop = RMSprop(lr=learning_rate)
 model.compile(loss="categorical_crossentropy", optimizer=rms_prop, metrics=["accuracy"])
 
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.10)
+early_stop = EarlyStopping(monitor="val_loss", patience=3, verbose=0, mode="auto")
 history = model.fit(x=[x_train, y_train], y=y_train, batch_size=batch_size, epochs=epochs, verbose=1,
-                    validation_data=([x_test, y_test], y_test))
+                    validation_data=([x_test, y_test], y_test), callbacks=[early_stop])
 
 scores = model.evaluate([x_test, y_test], y_test, verbose=1)
 
