@@ -5,7 +5,7 @@ import csv
 import numpy as np
 from gensim.models import Word2Vec
 from keras.callbacks import EarlyStopping
-from keras.layers import Dense, LSTM, Input, Activation, Add, TimeDistributed, Flatten, Multiply
+from keras.layers import Dense, LSTM, Input, Activation, Add, TimeDistributed, Flatten, Multiply, Permute
 from keras.models import Model
 from keras.optimizers import RMSprop
 from sklearn.model_selection import train_test_split
@@ -99,7 +99,7 @@ y = np.array(list(map(add_zeros, y)))
 # RNN structure
 
 epochs = 100
-batch_size = 5
+batch_size = 10
 learning_rate = 0.001
 
 encoder_shape = np.shape(x[0])
@@ -125,18 +125,18 @@ encoder_states = [state_h, state_c]
 """____decoder___"""
 decoder_inputs = Input(shape=(None, decoder_shape[1]))
 decoder_LSTM = LSTM(10, return_sequences=True, dropout=0.2, return_state=True)
-decoder_outputs, _, _ = decoder_LSTM(decoder_inputs, initial_state=encoder_states)
+decoder_output, _, _ = decoder_LSTM(decoder_inputs, initial_state=encoder_states)
 
 attention = TimeDistributed(Dense(1, activation="tanh"))(encoder_outputs_final)
 attention = Flatten()(attention)
-attention = Multiply()([decoder_outputs, attention])
+attention = Multiply()([decoder_output, attention])
 attention = Activation("softmax")(attention)
-# attention = Permute([2, 1])(attention)
+attention = Permute([1, 2])(attention)
 
 decoder_dense = Dense(decoder_shape[1], activation="softmax")
-decoder_outputs = decoder_dense(attention)
+decoder_output = decoder_dense(attention)
 
-model = Model(inputs=[encoder_inputs, decoder_inputs], outputs=decoder_outputs)
+model = Model(inputs=[encoder_inputs, decoder_inputs], outputs=decoder_output)
 
 print(model.summary())
 
@@ -146,10 +146,23 @@ rms_prop = RMSprop(lr=learning_rate)
 model.compile(loss="categorical_crossentropy", optimizer=rms_prop, metrics=["accuracy"])
 
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.10)
-early_stop = EarlyStopping(monitor="val_loss", patience=3, verbose=0, mode="auto")
+early_stop = EarlyStopping(monitor="val_loss", patience=10, verbose=0, mode="auto")
 history = model.fit(x=[x_train, y_train], y=y_train, batch_size=batch_size, epochs=epochs, verbose=1,
                     validation_data=([x_test, y_test], y_test), callbacks=[early_stop])
+
+encoder_model = Model(encoder_inputs, encoder_states)
+
+decoder_state_input_h = Input(shape=(encoder_shape[0],))
+decoder_state_input_c = Input(shape=(encoder_shape[0],))
+decoder_state_input = [decoder_state_input_h, decoder_state_input_c]
+decoder_output, decoder_state_h, decoder_state_c = decoder_LSTM(decoder_inputs, initial_state=decoder_state_input)
+decoder_states = [decoder_state_h, decoder_state_c]
+decoder_output = decoder_dense(decoder_output)
+
+decoder_model = Model([decoder_inputs] + decoder_state_input, [decoder_output] + decoder_states)
 
 scores = model.evaluate([x_test, y_test], y_test, verbose=1)
 
 print(scores)
+
+test_input = np.reshape(x[0], (1, encoder_shape[0], encoder_shape[1]))
