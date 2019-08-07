@@ -80,7 +80,7 @@ target_tensor, target_lang_tokenizer = tokenize(target_lang)
 max_length_target, max_length_inp = max_length(target_tensor), max_length(input_tensor)
 
 # Creating training and test sets using an 70-30 split
-input_train, input_test, target_train, target_test = train_test_split(input_tensor, target_tensor, test_size=0.2)
+input_train, input_test, target_train, target_test = train_test_split(input_tensor, target_tensor, test_size=0.3)
 
 # Creating test and validation sets using 15-15 split, 70-15-15
 input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.5)
@@ -89,6 +89,7 @@ BUFFER_SIZE = len(input_train)
 BATCH_SIZE = 64
 train_steps_per_epoch = len(input_train) // BATCH_SIZE
 val_steps_per_epoch = len(input_val) // BATCH_SIZE
+test_steps_per_epoch = len(input_test) // BATCH_SIZE
 embedding_dimension = 256
 dimensionality = 1024
 vocab_inp_size = len(input_lang_tokenizer.word_index) + 1
@@ -99,6 +100,9 @@ train_dataset = train_dataset.batch(BATCH_SIZE, drop_remainder=True)
 
 val_dataset = tf.data.Dataset.from_tensor_slices((input_val, target_val))
 val_dataset = val_dataset.batch(BATCH_SIZE, drop_remainder=True)
+
+test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
+test_dataset = test_dataset.batch(BATCH_SIZE, drop_remainder=True)
 
 
 def lstm(units):
@@ -215,7 +219,7 @@ decoder = Decoder(vocab_tar_size, embedding_dimension, dimensionality)
 
 learning_rate = CustomSchedule()
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
 
@@ -297,6 +301,8 @@ for epoch in range(EPOCHS):
     test_loss.reset_states()
     test_accuracy.reset_states()
 
+    train_dataset = train_dataset.shuffle(BUFFER_SIZE)
+
     for batch, (inp, target) in enumerate(train_dataset.take(train_steps_per_epoch)):
         train_step(inp, target)
 
@@ -309,6 +315,14 @@ for epoch in range(EPOCHS):
     print("Train Loss {:.4f} Accuracy {:.4f}".format(train_loss.result(), train_accuracy.result()))
     print("Validation Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
     print("{} secs taken for epoch {}\n".format(time.time() - start, epoch + 1))
+
+test_loss.reset_states()
+test_accuracy.reset_states()
+
+for inp, target in test_dataset.take(test_steps_per_epoch):
+    test_step(inp, target)
+
+print("Test Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
 
 
 def evaluate(sentence):
@@ -370,7 +384,7 @@ def translate(sentence):
     print("Input: %s" % sentence)
     print("Predicted translation: {}".format(result))
 
-    attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
+    # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
 
 
