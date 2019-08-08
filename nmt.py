@@ -69,7 +69,7 @@ def tokenize(lang):
     return tensor, lang_tokenizer
 
 
-num_examples = 30000
+num_examples = 100000
 # creating cleaned input, output pairs
 target_lang, input_lang = create_dataset(path_to_file, num_examples)
 
@@ -290,7 +290,11 @@ def test_step(inputs, targets):
     test_loss((loss / int(targets.shape[1])))
 
 
-EPOCHS = 20
+EPOCHS = 100
+PATIENCE = 5
+
+stop_flags = []
+last_val_accuracy = 0
 
 for epoch in range(EPOCHS):
     start = time.time()
@@ -316,13 +320,24 @@ for epoch in range(EPOCHS):
     print("Validation Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
     print("{} secs taken for epoch {}\n".format(time.time() - start, epoch + 1))
 
+    if test_accuracy.result() > last_val_accuracy:
+        stop_flags = []
+    else:
+        stop_flags.append(True)
+
+    if len(stop_flags) >= PATIENCE:
+        print("\nEarly stopping\n")
+        break
+
+    last_val_accuracy = test_accuracy.result()
+
 test_loss.reset_states()
 test_accuracy.reset_states()
 
 for inp, target in test_dataset.take(test_steps_per_epoch):
     test_step(inp, target)
 
-print("Test Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
+print("Test Loss {:.4f} Accuracy {:.4f}\n".format(test_loss.result(), test_accuracy.result()))
 
 
 def evaluate(sentence):
