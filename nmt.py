@@ -319,10 +319,10 @@ for epoch in range(EPOCHS):
     print("Validation Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
     print("{} secs taken for epoch {}\n".format(time.time() - start, epoch + 1))
 
-    if test_accuracy.result() > last_val_accuracy:
-        stop_flags = []
-    else:
+    if test_accuracy.result() < last_val_accuracy or abs(last_val_accuracy - test_accuracy.result()) < 1e-4:
         stop_flags.append(True)
+    else:
+        stop_flags = []
 
     if len(stop_flags) >= PATIENCE:
         print("\nEarly stopping\n")
