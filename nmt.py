@@ -267,7 +267,6 @@ def train_step(inputs, targets):
     optimizer.apply_gradients(zip(gradients, variables))
 
 
-@tf.function
 def test_step(inputs, targets):
     loss = 0
 
@@ -275,7 +274,7 @@ def test_step(inputs, targets):
     dec_hidden = enc_hidden
     dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
 
-    for t in range(1, targets.shape[1]):
+    for t in range(1, max_length_target):
         # passing enc_output to the decoder
         predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
 
@@ -363,7 +362,7 @@ def evaluate(sentence):
         attention_weights = tf.reshape(attention_weights, (-1,))
         attention_plot[t] = attention_weights.numpy()
 
-        predicted_id = tf.argmax(predictions[0]).numpy()
+        predicted_id = tf.math.argmax(predictions[0]).numpy()
 
         result += target_lang_tokenizer.index_word[predicted_id] + " "
 
