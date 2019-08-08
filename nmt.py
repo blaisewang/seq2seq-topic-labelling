@@ -241,26 +241,26 @@ test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name="test_accuracy")
 
 
 @tf.function
-def train_step(train_input, train_target):
+def train_step(inputs, targets):
     loss = 0
 
     with tf.GradientTape() as tape:
-        enc_output, enc_hidden = encoder(train_input)
+        enc_output, enc_hidden = encoder(inputs)
         dec_hidden = enc_hidden
         dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
 
         # Teacher forcing - feeding the target as the next input
-        for t in range(1, train_target.shape[1]):
+        for t in range(1, targets.shape[1]):
             # passing enc_output to the decoder
             predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
 
-            loss += loss_function(train_target[:, t], predictions)
-            train_accuracy.update_state(train_target[:, t], predictions)
+            loss += loss_function(targets[:, t], predictions)
+            train_accuracy.update_state(targets[:, t], predictions)
 
             # using teacher forcing
-            dec_input = tf.expand_dims(train_target[:, t], 1)
+            dec_input = tf.expand_dims(targets[:, t], 1)
 
-    train_loss((loss / int(train_target.shape[1])))
+    train_loss((loss / int(targets.shape[1])))
 
     variables = encoder.trainable_variables + decoder.trainable_variables
     gradients = tape.gradient(loss, variables)
@@ -268,26 +268,26 @@ def train_step(train_input, train_target):
 
 
 @tf.function
-def test_step(test_input, test_target):
+def test_step(inputs, targets):
     loss = 0
 
-    enc_output, enc_hidden = encoder(test_input)
+    enc_output, enc_hidden = encoder(inputs)
     dec_hidden = enc_hidden
     dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
 
-    for t in range(max_length_target):
+    for t in range(1, targets.shape[1]):
         # passing enc_output to the decoder
         predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
 
-        loss += loss_function(test_target[:, t], predictions)
-        test_accuracy.update_state(test_target[:, t], predictions)
+        loss += loss_function(targets[:, t], predictions)
+        test_accuracy.update_state(targets[:, t], predictions)
 
         predicted = tf.math.argmax(predictions, axis=1)
 
-        # feed back the predicted into the model
+        # using teacher forcing
         dec_input = tf.expand_dims(predicted, 1)
 
-    test_loss(loss / int(test_target.shape[1]))
+    test_loss((loss / int(targets.shape[1])))
 
 
 EPOCHS = 20
