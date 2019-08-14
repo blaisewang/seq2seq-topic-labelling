@@ -6,7 +6,7 @@ DUMMY_LINE = "228.0	#	0.0"
 
 # topics processing
 with open("../data/topics.csv", "r") as topics_in, open("../data/dataset_text.txt", "r") as labels_in, open(
-        "../data/data.csv", "w") as out:
+        "../input/data.csv", "w") as out:
     # topics csv reader
     topic_reader = csv.reader(topics_in)
     # csv writer
