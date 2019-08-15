@@ -1,8 +1,5 @@
-import io
-import os
-import re
+import csv
 import time
-import unicodedata
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -12,46 +9,29 @@ from sklearn.model_selection import train_test_split
 
 tf.compat.v1.enable_eager_execution()
 
-# Download the file
-path_to_zip = tf.keras.utils.get_file("spa-eng.zip", origin="http://download.tensorflow.org/data/spa-eng.zip",
-                                      extract=True)
-
-path_to_file = os.path.dirname(path_to_zip) + "/spa-eng/spa.txt"
+path_to_file = "../input/data.csv"
 
 
-# Converts the unicode file to ascii
-def unicode_to_ascii(s):
-    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+def preprocess_sentence(sent):
+    return "<start> " + sent + " <end>"
 
 
-def preprocess_sentence(w):
-    w = unicode_to_ascii(w.lower().strip())
+# Return topic label pairs
+def create_dataset(path):
+    topics = []
+    labels = []
 
-    # creating a space between a word and the punctuation following it
-    # eg: "he is a boy." => "he is a boy ."
-    w = re.sub(r"([?.!,¿])", r" \1 ", w)
-    w = re.sub(r'[" "]+', " ", w)
+    with open(path, "r") as csv_data:
+        reader = csv.reader(csv_data)
 
-    # replacing everything with space except (a-z, A-Z, ".", "?", "!", ",")
-    w = re.sub(r"[^a-zA-Z?.!,¿]+", " ", w)
+        # skip header
+        next(reader, None)
 
-    w = w.rstrip().strip()
+        for row in reader:
+            topics.append(preprocess_sentence(row[0]))
+            labels.append(preprocess_sentence(row[1]))
 
-    # adding a start and an end token to the sentence
-    # so that the model know when to start and stop predicting.
-    w = "<start> " + w + " <end>"
-    return w
-
-
-# 1. Remove the accents
-# 2. Clean the sentences
-# 3. Return word pairs in the format: [ENGLISH, SPANISH]
-def create_dataset(path, examples):
-    lines = io.open(path, encoding="UTF-8").read().strip().split("\n")
-
-    word_pairs = [[preprocess_sentence(w) for w in l.split("\t")] for l in lines[:examples]]
-
-    return zip(*word_pairs)
+    return topics, labels
 
 
 def max_length(tensor):
@@ -69,15 +49,14 @@ def tokenize(lang):
     return tensor, lang_tokenizer
 
 
-num_examples = 100000
 # creating cleaned input, output pairs
-target_lang, input_lang = create_dataset(path_to_file, num_examples)
+input_lang, target_lang = create_dataset(path_to_file)
 
 input_tensor, input_lang_tokenizer = tokenize(input_lang)
 target_tensor, target_lang_tokenizer = tokenize(target_lang)
 
 # Calculate max_length of the target tensors
-max_length_target, max_length_inp = max_length(target_tensor), max_length(input_tensor)
+max_length_inp, max_length_target = max_length(input_tensor), max_length(target_tensor)
 
 # Creating training and test sets using an 70-30 split
 input_train, input_test, target_train, target_test = train_test_split(input_tensor, target_tensor, test_size=0.3)
@@ -219,7 +198,7 @@ decoder = Decoder(vocab_tar_size, embedding_dimension, dimensionality)
 
 learning_rate = CustomSchedule()
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
 
@@ -240,7 +219,6 @@ test_loss = tf.keras.metrics.Mean(name="test_loss")
 test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name="test_accuracy")
 
 
-@tf.function
 def train_step(inputs, targets):
     loss = 0
 
@@ -289,7 +267,7 @@ def test_step(inputs, targets):
     test_loss((loss / int(targets.shape[1])))
 
 
-EPOCHS = 100
+EPOCHS = 10
 PATIENCE = 5
 
 stop_flags = []
@@ -306,27 +284,24 @@ for epoch in range(EPOCHS):
 
     train_dataset = train_dataset.shuffle(BUFFER_SIZE)
 
-    for batch, (inp, target) in enumerate(train_dataset.take(train_steps_per_epoch)):
+    for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
-
-        if batch % 100 == 0:
-            print("Batch {} Loss {:.4f} Accuracy {:.4f}".format(batch, train_loss.result(), train_accuracy.result()))
 
     for inp, target in val_dataset.take(val_steps_per_epoch):
         test_step(inp, target)
 
-    print("Train Loss {:.4f} Accuracy {:.4f}".format(train_loss.result(), train_accuracy.result()))
-    print("Validation Loss {:.4f} Accuracy {:.4f}".format(test_loss.result(), test_accuracy.result()))
-    print("{} secs taken for epoch {}\n".format(time.time() - start, epoch + 1))
+    print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
+    print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
+    print("%.4f secs taken for epoch %d\n" % (time.time() - start, epoch + 1))
 
     if test_accuracy.result() < last_val_accuracy or abs(last_val_accuracy - test_accuracy.result()) < 1e-4:
         stop_flags.append(True)
     else:
-        stop_flags = []
+        stop_flags.clear()
 
-    if len(stop_flags) >= PATIENCE:
-        print("\nEarly stopping\n")
-        break
+    # if len(stop_flags) >= PATIENCE:
+    #     print("\nEarly stopping\n")
+    #     break
 
     last_val_accuracy = test_accuracy.result()
 
@@ -336,7 +311,7 @@ test_accuracy.reset_states()
 for inp, target in test_dataset.take(test_steps_per_epoch):
     test_step(inp, target)
 
-print("Test Loss {:.4f} Accuracy {:.4f}\n".format(test_loss.result(), test_accuracy.result()))
+print("Test Loss: %.4f Accuracy: %.4f\n" % (test_loss.result(), test_accuracy.result()))
 
 
 def evaluate(sentence):
@@ -344,7 +319,7 @@ def evaluate(sentence):
 
     sentence = preprocess_sentence(sentence)
 
-    inputs = [input_lang_tokenizer.word_index[i] for i in sentence.split(" ")]
+    inputs = [input_lang_tokenizer.word_index[w] for w in sentence.split(" ")]
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=max_length_inp, padding="post")
     inputs = tf.convert_to_tensor(inputs)
 
@@ -392,20 +367,20 @@ def plot_attention(attention, sentence, predicted_sentence):
     plt.show()
 
 
-def translate(sentence):
+def generate_topic(sentence):
     result, sentence, attention_plot = evaluate(sentence)
 
-    print("Input: %s" % sentence)
-    print("Predicted translation: {}".format(result))
+    print("Input labels: %s" % sentence)
+    print("Predicted topic: %s" % result)
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
 
 
-translate(u"hace mucho frio aqui.")
+generate_topic("system cost datum tool analysis provide design technology develop information")
 
-translate(u"esta es mi vida.")
+generate_topic("treatment patient trial therapy study month week efficacy effect receive")
 
-translate(u"¿todavia estan en casa?")
+generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
 
-translate(u"trata de averiguarlo.")
+generate_topic("film movie star director hollywood actor minute direct story witch")
