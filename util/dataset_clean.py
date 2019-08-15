@@ -1,8 +1,21 @@
 import csv
+import re
 
 SCORE_THRESHOLD = 1.5
 
-DUMMY_LINE = "228.0	#	0.0"
+DUMMY_LINE = "228.0	#	-1.0"
+
+
+def clean_word(words):
+    string = ""
+
+    for word in words:
+        cleaned = re.findall("[a-z]+", word)
+        if cleaned:
+            string += " ".join(cleaned) + " "
+
+    return string.strip()
+
 
 # topics processing
 with open("../data/topics.csv", "r") as topics_in, open("../data/dataset_text.txt", "r") as labels_in, open(
@@ -12,11 +25,15 @@ with open("../data/topics.csv", "r") as topics_in, open("../data/dataset_text.tx
     # csv writer
     writer = csv.writer(out)
 
+    # write header
+    writer.writerow(["topic", "label"])
+
     # skip topics csv header
     next(topic_reader, None)
+
     topics = []
     for row in topic_reader:
-        topics.append(" ".join(row[2:]))
+        topics.append(clean_word(row[2:]))
 
     # read labels lines
     lines = labels_in.readlines()
@@ -38,4 +55,4 @@ with open("../data/topics.csv", "r") as topics_in, open("../data/dataset_text.tx
         score = float(line[2].strip("\n"))
         # keep relevant labels only
         if score >= SCORE_THRESHOLD:
-            writer.writerow([topics[index], line[1]])
+            writer.writerow([topics[index], clean_word(line[1].split())])
