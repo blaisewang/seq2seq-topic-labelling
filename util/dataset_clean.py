@@ -10,7 +10,10 @@ def clean_word(words):
     string = ""
 
     for word in words:
-        cleaned = re.findall("[a-z]+", word)
+
+        word = word.replace(".", "")
+
+        cleaned = re.findall(r"[\w/-]+", word)
         if cleaned:
             string += " ".join(cleaned) + " "
 
