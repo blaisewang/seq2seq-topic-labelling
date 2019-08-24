@@ -12,6 +12,7 @@ tf.compat.v1.enable_eager_execution()
 
 path_to_file = "./input/data.csv"
 
+# load pre-trained word2vec model
 model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin", binary=True)
 
 vocab = model.vocab
@@ -20,10 +21,10 @@ EMBEDDING_SIZE = 300
 
 SYMBOL_INDEX = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
 
-SYMBOL_VALUE = {"<start>": tf.ones(EMBEDDING_SIZE),  # [1] * 300
-                "<end>": tf.negative(tf.ones(EMBEDDING_SIZE)),  # [-1] * 300
-                "<unk>": tf.tile([0.5], [300]),  # [0.5] * 300
-                "<pad>": tf.zeros(EMBEDDING_SIZE)}  # [0] * 300
+SYMBOL_VALUE = {"<start>": tf.ones(EMBEDDING_SIZE),
+                "<end>": tf.negative(tf.ones(EMBEDDING_SIZE)),
+                "<unk>": tf.tile([0.5], [300]),
+                "<pad>": tf.zeros(EMBEDDING_SIZE)}
 
 
 def preprocess_sentence(sent):
@@ -418,7 +419,7 @@ def generate_topic(sentence, targets):
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
-    print("Target topic: %s" % [preprocess_sentence(label) for label in targets])
+    print("Target topic: %s\n" % [preprocess_sentence(label) for label in targets])
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
