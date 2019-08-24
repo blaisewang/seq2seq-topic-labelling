@@ -23,8 +23,8 @@ SYMBOL_INDEX = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
 
 SYMBOL_VALUE = {"<start>": tf.ones(EMBEDDING_SIZE),
                 "<end>": tf.negative(tf.ones(EMBEDDING_SIZE)),
-                "<unk>": tf.tile([0.5], [300]),
-                "<pad>": tf.zeros(EMBEDDING_SIZE)}
+                "<unk>": tf.zeros(EMBEDDING_SIZE),
+                "<pad>": tf.tile([0.5], [300])}
 
 
 def preprocess_sentence(sent):
