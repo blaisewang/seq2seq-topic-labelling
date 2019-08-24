@@ -1,6 +1,7 @@
 import csv
 import time
 
+import gensim
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
@@ -9,11 +10,24 @@ from sklearn.model_selection import train_test_split
 
 tf.compat.v1.enable_eager_execution()
 
-path_to_file = "../input/data.csv"
+path_to_file = "./input/data.csv"
+
+model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin", binary=True)
+
+vocab = model.vocab
+
+EMBEDDING_SIZE = 300
+
+SYMBOL_INDEX = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
+
+SYMBOL_VALUE = {"<start>": tf.ones(EMBEDDING_SIZE),  # [1] * 300
+                "<end>": tf.negative(tf.ones(EMBEDDING_SIZE)),  # [-1] * 300
+                "<unk>": tf.tile([0.5], [300]),  # [0.5] * 300
+                "<pad>": tf.zeros(EMBEDDING_SIZE)}  # [0] * 300
 
 
 def preprocess_sentence(sent):
-    return "<start> " + sent + " <end>"
+    return "<start> " + " ".join(topic if topic in vocab else "<unk>" for topic in sent.split()) + " <end>"
 
 
 # Return topic label pairs
@@ -28,38 +42,58 @@ def create_dataset(path):
         next(reader, None)
 
         for row in reader:
-            topics.append(preprocess_sentence(row[0]))
-            labels.append(preprocess_sentence(row[1]))
+            topic_str = preprocess_sentence(row[0])
+            label_str = preprocess_sentence(row[1])
+
+            if all(label == "<unk>" for label in label_str.split()):
+                continue
+
+            topics.append(topic_str)
+            labels.append(label_str)
 
     return topics, labels
 
 
-def max_length(tensor):
-    return max(len(num) for num in tensor)
+def index2vec(index):
+    if index <= 3:
+        return SYMBOL_VALUE[SYMBOL_INDEX[index]]
+    return model.word_vec(model.index2word[index])
+
+
+def indices2vec(indices):
+    return [index2vec(int(index)) for index in indices]
+
+
+def max_length(vectors):
+    return max(len(vector) for vector in vectors)
 
 
 def tokenize(lang):
     lang_tokenizer = tf.keras.preprocessing.text.Tokenizer(filters="")
     lang_tokenizer.fit_on_texts(lang)
 
-    tensor = lang_tokenizer.texts_to_sequences(lang)
+    indices_list = lang_tokenizer.texts_to_sequences(lang)
 
-    tensor = tf.keras.preprocessing.sequence.pad_sequences(tensor, padding="post")
+    indices_list = tf.keras.preprocessing.sequence.pad_sequences(indices_list, padding="post")
 
-    return tensor, lang_tokenizer
+    return indices_list, lang_tokenizer
 
 
 # creating cleaned input, output pairs
 input_lang, target_lang = create_dataset(path_to_file)
 
-input_tensor, input_lang_tokenizer = tokenize(input_lang)
-target_tensor, target_lang_tokenizer = tokenize(target_lang)
+input_vectors, input_tokenizer = tokenize(input_lang)
+target_vectors, target_tokenizer = tokenize(target_lang)
 
-# Calculate max_length of the target tensors
-max_length_inp, max_length_target = max_length(input_tensor), max_length(target_tensor)
+# assert
+assert all(input_tokenizer.index_word[i] == SYMBOL_INDEX[i] for i in [1, 2, 3])
+assert all(target_tokenizer.index_word[i] == SYMBOL_INDEX[i] for i in [1, 2, 3])
+
+# Calculate max_length of the vectors
+max_length_inp, max_length_target = max_length(input_vectors), max_length(target_vectors)
 
 # Creating training and test sets using an 70-30 split
-input_train, input_test, target_train, target_test = train_test_split(input_tensor, target_tensor, test_size=0.3)
+input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
 
 # Creating test and validation sets using 15-15 split, 70-15-15
 input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.5)
@@ -69,13 +103,12 @@ BATCH_SIZE = 64
 train_steps_per_epoch = len(input_train) // BATCH_SIZE
 val_steps_per_epoch = len(input_val) // BATCH_SIZE
 test_steps_per_epoch = len(input_test) // BATCH_SIZE
-embedding_dimension = 256
 dimensionality = 1024
-vocab_inp_size = len(input_lang_tokenizer.word_index) + 1
-vocab_tar_size = len(target_lang_tokenizer.word_index) + 1
+vocab_inp_size = len(input_tokenizer.word_index) + 1
+vocab_tar_size = len(target_tokenizer.word_index) + 1
 
-train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train)).shuffle(BUFFER_SIZE)
-train_dataset = train_dataset.batch(BATCH_SIZE, drop_remainder=True)
+train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train))
+train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE, drop_remainder=True)
 
 val_dataset = tf.data.Dataset.from_tensor_slices((input_val, target_val))
 val_dataset = val_dataset.batch(BATCH_SIZE, drop_remainder=True)
@@ -95,14 +128,14 @@ def lstm(units):
 
 
 class Encoder(tf.keras.Model):
-    def __init__(self, vocab_size, embedding_dim, enc_units):
+    def __init__(self, enc_units):
         super(Encoder, self).__init__()
         self.enc_units = enc_units
-        self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
         self.rnn = tf.keras.layers.Bidirectional(lstm(self.enc_units), merge_mode="concat")
 
     def call(self, x):
-        x = self.embedding(x)
+        x = tf.cast(x, dtype=tf.float32)
+
         output, forward_h, forward_c, backward_h, backward_c = self.rnn(x)
         state_h = tf.keras.layers.Concatenate()([forward_h, backward_h])
         state_c = tf.keras.layers.Concatenate()([forward_c, backward_c])
@@ -139,10 +172,9 @@ class BahdanauAttention(tf.keras.Model):
 
 
 class Decoder(tf.keras.Model):
-    def __init__(self, vocab_size, embedding_dim, dec_units):
+    def __init__(self, vocab_size, dec_units):
         super(Decoder, self).__init__()
         self.dec_units = dec_units
-        self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
         self.lstm = lstm(self.dec_units * 2)
         self.fc = tf.keras.layers.Dense(vocab_size)
 
@@ -150,11 +182,11 @@ class Decoder(tf.keras.Model):
         self.attention = BahdanauAttention(self.dec_units)
 
     def call(self, x, hidden, encoder_output):
+        # x shape == (batch_size, 1, embedding_dim)
+        x = tf.cast(x, dtype=tf.float32)
+
         # enc_output shape == (batch_size, max_length, hidden_size)
         context_vector, attention_weights = self.attention(hidden, encoder_output)
-
-        # x shape after passing through embedding == (batch_size, 1, embedding_dim)
-        x = self.embedding(x)
 
         # x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
         x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
@@ -193,12 +225,11 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
 
 
-encoder = Encoder(vocab_inp_size, embedding_dimension, dimensionality)
-decoder = Decoder(vocab_tar_size, embedding_dimension, dimensionality)
+encoder = Encoder(dimensionality)
+decoder = Decoder(vocab_tar_size, dimensionality)
 
 learning_rate = CustomSchedule()
-
-optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
 
@@ -223,9 +254,16 @@ def train_step(inputs, targets):
     loss = 0
 
     with tf.GradientTape() as tape:
-        enc_output, enc_hidden = encoder(inputs)
+        # vectors = [indices2vec(indices) for indices in indices_list]
+
+        inp_vectors = [indices2vec(indices) for indices in inputs]
+
+        enc_output, enc_hidden = encoder(inp_vectors)
         dec_hidden = enc_hidden
-        dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
+
+        # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
+        dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
+        dec_input = tf.tile(dec_input, [BATCH_SIZE, 1, 1])
 
         # Teacher forcing - feeding the target as the next input
         for t in range(1, targets.shape[1]):
@@ -236,7 +274,8 @@ def train_step(inputs, targets):
             train_accuracy.update_state(targets[:, t], predictions)
 
             # using teacher forcing
-            dec_input = tf.expand_dims(targets[:, t], 1)
+            # dec_input = tf.expand_dims(targets[:, t], 1)
+            dec_input = tf.expand_dims(indices2vec(targets[:, t]), 1)
 
     train_loss((loss / int(targets.shape[1])))
 
@@ -248,9 +287,14 @@ def train_step(inputs, targets):
 def test_step(inputs, targets):
     loss = 0
 
-    enc_output, enc_hidden = encoder(inputs)
+    inp_vectors = [indices2vec(indices) for indices in inputs]
+
+    enc_output, enc_hidden = encoder(inp_vectors)
     dec_hidden = enc_hidden
-    dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
+
+    # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
+    dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
+    dec_input = tf.tile(dec_input, [BATCH_SIZE, 1, 1])
 
     for t in range(1, max_length_target):
         # passing enc_output to the decoder
@@ -261,8 +305,8 @@ def test_step(inputs, targets):
 
         predicted = tf.math.argmax(predictions, axis=1)
 
-        # using teacher forcing
-        dec_input = tf.expand_dims(predicted, 1)
+        # dec_input = tf.expand_dims(predicted, 1)
+        dec_input = tf.expand_dims(indices2vec(predicted), 1)
 
     test_loss((loss / int(targets.shape[1])))
 
@@ -319,16 +363,18 @@ def evaluate(sentence):
 
     sentence = preprocess_sentence(sentence)
 
-    inputs = [input_lang_tokenizer.word_index[w] for w in sentence.split(" ")]
+    inputs = [input_tokenizer.word_index[w] for w in sentence.split(" ")]
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=max_length_inp, padding="post")
-    inputs = tf.convert_to_tensor(inputs)
+    inputs = [indices2vec(indices) for indices in inputs]
 
     result = ""
 
     enc_out, enc_hidden = encoder(inputs)
 
     dec_hidden = enc_hidden
-    dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]], 0)
+
+    # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]], 0)
+    dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
 
     for t in range(max_length_target):
         predictions, dec_hidden, attention_weights = decoder(dec_input, dec_hidden, enc_out)
@@ -339,13 +385,13 @@ def evaluate(sentence):
 
         predicted_id = tf.math.argmax(predictions[0]).numpy()
 
-        result += target_lang_tokenizer.index_word[predicted_id] + " "
+        result += target_tokenizer.index_word[predicted_id] + " "
 
-        if target_lang_tokenizer.index_word[predicted_id] == "<end>":
+        if target_tokenizer.index_word[predicted_id] == "<end>":
             return result, sentence, attention_plot
 
         # the predicted ID is fed back into the model
-        dec_input = tf.expand_dims([predicted_id], 0)
+        dec_input = tf.expand_dims([index2vec(predicted_id)], 1)
 
     return result, sentence, attention_plot
 
@@ -367,20 +413,30 @@ def plot_attention(attention, sentence, predicted_sentence):
     plt.show()
 
 
-def generate_topic(sentence):
+def generate_topic(sentence, targets):
     result, sentence, attention_plot = evaluate(sentence)
 
     print("Input labels: %s" % sentence)
-    print("Predicted topic: %s" % result)
+    print("Predicted topic: %s" % "<start> " + result)
+    print("Target topic: %s" % [preprocess_sentence(label) for label in targets])
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
 
 
-generate_topic("system cost datum tool analysis provide design technology develop information")
+generate_topic("system cost datum tool analysis provide design technology develop information",
+               ["database", "data collection", "data analysis", "methodology", "automation", "project management",
+                "system", "software", "computer", "information"])
 
-generate_topic("treatment patient trial therapy study month week efficacy effect receive")
+generate_topic("treatment patient trial therapy study month week efficacy effect receive",
+               ["electroconvulsive therapy", "major depressive disorder", "therapy", "adjuvant therapy",
+                "hormone replacement therapy menopause", "chemotherapy", "hormone therapy", "pain management",
+                "clinical trial", "cognitive behavioral therapy"])
 
-generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
+generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal",
+               ["melanoma", "thyroid", "differential diagnosis", "biopsy", "renal cell carcinoma", "ovarian cancer",
+                "carcinoma", "granuloma"])
 
-generate_topic("film movie star director hollywood actor minute direct story witch")
+generate_topic("film movie star director hollywood actor minute direct story witch",
+               ["horror film", "fantasy film", "film adaptation", "quentin tarantino", "action film", "jodie foster",
+                "musical film", "a movie", "martin scorsese", "war film", "low-budget film", "film director", "film"])
