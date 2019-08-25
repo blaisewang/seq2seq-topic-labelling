@@ -1,4 +1,5 @@
 import csv
+import math
 import time
 
 import gensim
@@ -117,21 +118,21 @@ input_test, input_val, target_test, target_val = train_test_split(input_test, ta
 
 BUFFER_SIZE = len(input_train)
 BATCH_SIZE = 64
-train_steps_per_epoch = len(input_train) // BATCH_SIZE
-val_steps_per_epoch = len(input_val) // BATCH_SIZE
-test_steps_per_epoch = len(input_test) // BATCH_SIZE
+train_steps_per_epoch = math.ceil(len(input_train) / BATCH_SIZE)
+val_steps_per_epoch = math.ceil(len(input_val) / BATCH_SIZE)
+test_steps_per_epoch = math.ceil(len(input_test) / BATCH_SIZE)
 dimensionality = 1024
 vocab_inp_size = len(input_tokenizer.word_index) + 1
 vocab_tar_size = len(target_tokenizer.word_index) + 1
 
 train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train))
-train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE, drop_remainder=True)
+train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
 val_dataset = tf.data.Dataset.from_tensor_slices((input_val, target_val))
-val_dataset = val_dataset.batch(BATCH_SIZE, drop_remainder=True)
+val_dataset = val_dataset.batch(BATCH_SIZE)
 
 test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
-test_dataset = test_dataset.batch(BATCH_SIZE, drop_remainder=True)
+test_dataset = test_dataset.batch(BATCH_SIZE)
 
 
 def lstm(units):
@@ -280,7 +281,7 @@ def train_step(inputs, targets):
 
         # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
         dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
-        dec_input = tf.tile(dec_input, [BATCH_SIZE, 1, 1])
+        dec_input = tf.tile(dec_input, [inputs.shape[0], 1, 1])
 
         # Teacher forcing - feeding the target as the next input
         for t in range(1, targets.shape[1]):
@@ -313,7 +314,7 @@ def test_step(inputs, targets):
 
     # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
     dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
-    dec_input = tf.tile(dec_input, [BATCH_SIZE, 1, 1])
+    dec_input = tf.tile(dec_input, [inputs.shape[0], 1, 1])
 
     for t in range(1, max_length_target):
         # passing enc_output to the decoder
@@ -470,7 +471,7 @@ def generate_topic(sentence):
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
     if sentence in references:
-        print("Target topic: %s\n" % references[sentence])
+        print("Target topic: %s\n" % ', '.join(references[sentence]))
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
