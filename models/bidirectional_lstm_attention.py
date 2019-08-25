@@ -46,7 +46,7 @@ def create_dataset(path):
             topic_str = preprocess_sentence(row[0])
             label_str = preprocess_sentence(row[1])
 
-            if all(label == "<unk>" for label in label_str.split()):
+            if all(label in SYMBOL_VALUE for label in label_str.split()):
                 continue
 
             topics.append(topic_str)
@@ -80,8 +80,21 @@ def tokenize(lang):
     return indices_list, lang_tokenizer
 
 
+def reference_dict(inputs, targets):
+    ref_dict = {}
+
+    for topic, label in zip(inputs, targets):
+        if topic not in ref_dict:
+            ref_dict[topic] = []
+        ref_dict[topic].append(label)
+
+    return ref_dict
+
+
 # creating cleaned input, output pairs
 input_lang, target_lang = create_dataset(path_to_file)
+
+references = reference_dict(input_lang, target_lang)
 
 input_vectors, input_tokenizer = tokenize(input_lang)
 target_vectors, target_tokenizer = tokenize(target_lang)
@@ -389,12 +402,12 @@ def evaluate(sentence):
         result += target_tokenizer.index_word[predicted_id] + " "
 
         if target_tokenizer.index_word[predicted_id] == "<end>":
-            return result, sentence, attention_plot
+            return result.strip(), sentence, attention_plot
 
         # the predicted ID is fed back into the model
         dec_input = tf.expand_dims([index2vec(predicted_id)], 1)
 
-    return result, sentence, attention_plot
+    return result.strip(), sentence, attention_plot
 
 
 # function for plotting the attention weights
@@ -414,30 +427,22 @@ def plot_attention(attention, sentence, predicted_sentence):
     plt.show()
 
 
-def generate_topic(sentence, targets):
+def generate_topic(sentence):
     result, sentence, attention_plot = evaluate(sentence)
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
-    print("Target topic: %s\n" % [preprocess_sentence(label) for label in targets])
+    if sentence in references:
+        print("Target topic: %s\n" % references[sentence])
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
 
 
-generate_topic("system cost datum tool analysis provide design technology develop information",
-               ["database", "data collection", "data analysis", "methodology", "automation", "project management",
-                "system", "software", "computer", "information"])
+generate_topic("system cost datum tool analysis provide design technology develop information")
 
-generate_topic("treatment patient trial therapy study month week efficacy effect receive",
-               ["electroconvulsive therapy", "major depressive disorder", "therapy", "adjuvant therapy",
-                "hormone replacement therapy menopause", "chemotherapy", "hormone therapy", "pain management",
-                "clinical trial", "cognitive behavioral therapy"])
+generate_topic("treatment patient trial therapy study month week efficacy effect receive")
 
-generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal",
-               ["melanoma", "thyroid", "differential diagnosis", "biopsy", "renal cell carcinoma", "ovarian cancer",
-                "carcinoma", "granuloma"])
+generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
 
-generate_topic("film movie star director hollywood actor minute direct story witch",
-               ["horror film", "fantasy film", "film adaptation", "quentin tarantino", "action film", "jodie foster",
-                "musical film", "a movie", "martin scorsese", "war film", "low-budget film", "film director", "film"])
+generate_topic("film movie star director hollywood actor minute direct story witch")
