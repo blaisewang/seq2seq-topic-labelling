@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 import tensorflow as tf
+from nltk.translate import bleu_score
+from nltk.translate import gleu_score
+from nltk.translate import nist_score
 from sklearn.model_selection import train_test_split
 
 tf.compat.v1.enable_eager_execution()
@@ -306,6 +309,8 @@ def test_step(inputs, targets):
     enc_output, enc_hidden = encoder(inp_vectors)
     dec_hidden = enc_hidden
 
+    predicted_labels = []
+
     # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
     dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
     dec_input = tf.tile(dec_input, [BATCH_SIZE, 1, 1])
@@ -318,11 +323,45 @@ def test_step(inputs, targets):
         test_accuracy.update_state(targets[:, t], predictions)
 
         predicted = tf.math.argmax(predictions, axis=1)
+        predicted_labels.append(list(predicted.numpy()))
 
         # dec_input = tf.expand_dims(predicted, 1)
         dec_input = tf.expand_dims(indices2vec(predicted), 1)
 
     test_loss((loss / int(targets.shape[1])))
+
+    result = []
+    for label in zip(*predicted_labels):
+        result.append([])
+        for value in label:
+            if value in (0, 2):
+                break
+            result[-1].append(value)
+
+    return result
+
+
+def evaluation(dataset, steps):
+    eval_references = []
+    eval_hypotheses = []
+
+    for inputs, targets in dataset.take(steps):
+        for labels in target_tokenizer.sequences_to_texts(test_step(inputs, targets)):
+            if len(labels) > 0:
+                eval_hypotheses.append(labels.split())
+            else:
+                eval_hypotheses.append([""])
+
+        for labels in input_tokenizer.sequences_to_texts(inputs.numpy()):
+            eval_references.append(word_split(labels))
+
+    print("BLUE-1 Score: %f" % bleu_score.corpus_bleu(eval_references, eval_hypotheses, weights=(1,)))
+    print("GLUE-1 Score: %f" % gleu_score.corpus_gleu(eval_references, eval_hypotheses, max_len=1))
+    print("NIST-1 Score: %f" % nist_score.corpus_nist(eval_references, eval_hypotheses, n=1))
+
+
+def word_split(sent):
+    return [label.split()[1:-1] for label in references[sent]]
 
 
 EPOCHS = 10
@@ -345,29 +384,27 @@ for epoch in range(EPOCHS):
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
 
-    for inp, target in val_dataset.take(val_steps_per_epoch):
-        test_step(inp, target)
+    evaluation(val_dataset, val_steps_per_epoch)
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
     print("%.4f secs taken for epoch %d\n" % (time.time() - start, epoch + 1))
 
-    if test_accuracy.result() < last_val_accuracy or abs(last_val_accuracy - test_accuracy.result()) < 1e-4:
-        stop_flags.append(True)
-    else:
-        stop_flags.clear()
-
+    # if test_accuracy.result() < last_val_accuracy or abs(last_val_accuracy - test_accuracy.result()) < 1e-4:
+    #     stop_flags.append(True)
+    # else:
+    #     stop_flags.clear()
+    #
     # if len(stop_flags) >= PATIENCE:
     #     print("\nEarly stopping\n")
     #     break
-
-    last_val_accuracy = test_accuracy.result()
+    #
+    # last_val_accuracy = test_accuracy.result()
 
 test_loss.reset_states()
 test_accuracy.reset_states()
 
-for inp, target in test_dataset.take(test_steps_per_epoch):
-    test_step(inp, target)
+evaluation(test_dataset, test_steps_per_epoch)
 
 print("Test Loss: %.4f Accuracy: %.4f\n" % (test_loss.result(), test_accuracy.result()))
 
