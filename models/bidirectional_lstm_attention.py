@@ -10,6 +10,7 @@ import tensorflow as tf
 from nltk.translate import bleu_score
 from nltk.translate import gleu_score
 from nltk.translate import nist_score
+from rouge import Rouge
 from sklearn.model_selection import train_test_split
 
 tf.compat.v1.enable_eager_execution()
@@ -84,7 +85,7 @@ def tokenize(lang):
     return indices_list, lang_tokenizer
 
 
-def reference_dict(inputs, targets):
+def create_reference_dict(inputs, targets):
     ref_dict = {}
 
     for topic, label in zip(inputs, targets):
@@ -98,7 +99,7 @@ def reference_dict(inputs, targets):
 # creating cleaned input, output pairs
 input_lang, target_lang = create_dataset(path_to_file)
 
-references = reference_dict(input_lang, target_lang)
+reference_dict = create_reference_dict(input_lang, target_lang)
 
 input_vectors, input_tokenizer = tokenize(input_lang)
 target_vectors, target_tokenizer = tokenize(target_lang)
@@ -342,27 +343,64 @@ def test_step(inputs, targets):
     return result
 
 
-def evaluation(dataset, steps):
-    eval_references = []
-    eval_hypotheses = []
+def word_split(sent):
+    return [label.split()[1:-1] for label in reference_dict[sent]]
+
+
+def rouge_sum_score(rouge_dict):
+    return sum(value for fpr in rouge_dict.values() for value in fpr.values())
+
+
+def rouge_dict_format(rouge_dict):
+    return "{rouge-1: {f: %f, p: %f, r: %f}, rouge-l: {f: %f, p: %f, r: %f}}" % (
+        rouge_dict["rouge-1"]["f"], rouge_dict["rouge-1"]["p"], rouge_dict["rouge-1"]["r"],
+        rouge_dict["rouge-l"]["f"], rouge_dict["rouge-l"]["p"], rouge_dict["rouge-l"]["r"])
+
+
+def evaluation_metrics(dataset, steps, size):
+    references = []
+    hypotheses = []
+
+    rouge = Rouge()
+    rouge_dict = {"rouge-1": {"f": 0.0, "p": 0.0, "r": 0.0},
+                  "rouge-2": {"f": 0.0, "p": 0.0, "r": 0.0},
+                  "rouge-l": {"f": 0.0, "p": 0.0, "r": 0.0}}
 
     for inputs, targets in dataset.take(steps):
         for labels in target_tokenizer.sequences_to_texts(test_step(inputs, targets)):
             if len(labels) > 0:
-                eval_hypotheses.append(labels.split())
+                hypotheses.append(labels.split())
             else:
-                eval_hypotheses.append([""])
+                hypotheses.append([""])
 
         for labels in input_tokenizer.sequences_to_texts(inputs.numpy()):
-            eval_references.append(word_split(labels))
+            references.append(word_split(labels))
 
-    print("BLUE-1 Score: %f" % bleu_score.corpus_bleu(eval_references, eval_hypotheses, weights=(1,)))
-    print("GLUE-1 Score: %f" % gleu_score.corpus_gleu(eval_references, eval_hypotheses, max_len=1))
-    print("NIST-1 Score: %f" % nist_score.corpus_nist(eval_references, eval_hypotheses, n=1))
+    for index, hypothesis in enumerate(hypotheses):
+        max_score = {"rouge-1": {"f": 0.0, "p": 0.0, "r": 0.0},
+                     "rouge-2": {"f": 0.0, "p": 0.0, "r": 0.0},
+                     "rouge-l": {"f": 0.0, "p": 0.0, "r": 0.0}}
 
+        for reference in references[index]:
+            try:
+                score = rouge.get_scores(" ".join(hypothesis), " ".join(reference))[0]
+                if rouge_sum_score(score) > rouge_sum_score(max_score):
+                    max_score = score
+            except ValueError:
+                pass
 
-def word_split(sent):
-    return [label.split()[1:-1] for label in references[sent]]
+        for method_key in rouge_dict:
+            for fpr in rouge_dict[method_key]:
+                rouge_dict[method_key][fpr] += max_score[method_key][fpr]
+
+    for method_key in rouge_dict:
+        for fpr in rouge_dict[method_key]:
+            rouge_dict[method_key][fpr] /= size
+
+    print("BLUE-1 Score: %.4f" % bleu_score.corpus_bleu(references, hypotheses, weights=(1,)))
+    print("GLUE-1 Score: %.4f" % gleu_score.corpus_gleu(references, hypotheses, max_len=1))
+    print("NIST-1 Score: %.4f" % nist_score.corpus_nist(references, hypotheses, n=1))
+    print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
 
 EPOCHS = 10
@@ -385,12 +423,13 @@ for epoch in range(EPOCHS):
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
 
-    evaluation(val_dataset, val_steps_per_epoch)
+    evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
     print("%.4f secs taken for epoch %d\n" % (time.time() - start, epoch + 1))
 
+    # # early stopping
     # if test_accuracy.result() < last_val_accuracy or abs(last_val_accuracy - test_accuracy.result()) < 1e-4:
     #     stop_flags.append(True)
     # else:
@@ -405,7 +444,7 @@ for epoch in range(EPOCHS):
 test_loss.reset_states()
 test_accuracy.reset_states()
 
-evaluation(test_dataset, test_steps_per_epoch)
+evaluation_metrics(test_dataset, test_steps_per_epoch, len(input_test))
 
 print("Test Loss: %.4f Accuracy: %.4f\n" % (test_loss.result(), test_accuracy.result()))
 
@@ -470,8 +509,8 @@ def generate_topic(sentence):
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
-    if sentence in references:
-        print("Target topic: %s\n" % ', '.join(references[sentence]))
+    if sentence in reference_dict:
+        print("Target topic: %s\n" % ', '.join(reference_dict[sentence]))
 
     # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
     # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
