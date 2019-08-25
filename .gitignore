@@ -111,3 +111,6 @@ venv.bak/
 # dataset
 *.csv
 *.txt
+
+# word2vec model
+*.bin
