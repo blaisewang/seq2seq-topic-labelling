@@ -158,8 +158,8 @@ class Encoder(tf.keras.Model):
         output, forward_h, forward_c, backward_h, backward_c = self.rnn(x)
         state_h = tf.keras.layers.Concatenate()([forward_h, backward_h])
         state_c = tf.keras.layers.Concatenate()([forward_c, backward_c])
-        state = tf.add(state_h, state_c)
-        return output, state
+
+        return output, [state_h, state_c]
 
 
 class BahdanauAttention(tf.keras.Model):
@@ -200,20 +200,20 @@ class Decoder(tf.keras.Model):
         # used for attention
         self.attention = BahdanauAttention(self.dec_units)
 
-    def call(self, x, hidden, encoder_output):
+    def call(self, x, state, encoder_output):
         # x shape == (batch_size, 1, embedding_dim)
         x = tf.cast(x, dtype=tf.float32)
 
+        state_h, state_c = state
+
         # enc_output shape == (batch_size, max_length, hidden_size)
-        context_vector, attention_weights = self.attention(hidden, encoder_output)
+        context_vector, attention_weights = self.attention(state_h, encoder_output)
 
         # x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
         x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
 
-        # passing the concatenated vector to the GRU
-        output, h, c = self.lstm(x)
-
-        state = tf.add(h, c)
+        # passing the concatenated vector to the LSTM
+        output, state_h, state_c = self.lstm(x, initial_state=state)
 
         # output shape == (batch_size * 1, hidden_size)
         output = tf.reshape(output, (-1, output.shape[2]))
@@ -221,7 +221,7 @@ class Decoder(tf.keras.Model):
         # output shape == (batch_size, vocab)
         x = self.fc(output)
 
-        return x, state, attention_weights
+        return x, [state_h, state_c], attention_weights
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -403,7 +403,7 @@ def evaluation_metrics(dataset, steps, size):
     print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
 
-EPOCHS = 10
+EPOCHS = 50
 PATIENCE = 5
 
 stop_flags = []
@@ -512,8 +512,8 @@ def generate_topic(sentence):
     if sentence in reference_dict:
         print("Target topic: %s\n" % ', '.join(reference_dict[sentence]))
 
-    # attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
-    # plot_attention(attention_plot, sentence.split(" "), result.split(" "))
+    attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
+    plot_attention(attention_plot, sentence.split(" "), result.split(" "))
 
 
 generate_topic("system cost datum tool analysis provide design technology develop information")
@@ -523,3 +523,5 @@ generate_topic("treatment patient trial therapy study month week efficacy effect
 generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
 
 generate_topic("film movie star director hollywood actor minute direct story witch")
+
+generate_topic("cup cook minute add pepper salt serve tablespoon oil sauce")
