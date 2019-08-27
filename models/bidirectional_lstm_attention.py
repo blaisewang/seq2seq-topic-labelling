@@ -395,8 +395,8 @@ def evaluation_metrics(dataset, steps, size):
         for fpr in rouge_dict[method_key]:
             rouge_dict[method_key][fpr] /= size
 
-    print("BLUE-1 Score: %.4f" % bleu_score.corpus_bleu(references, hypotheses, weights=(1,)))
-    print("GLUE-1 Score: %.4f" % gleu_score.corpus_gleu(references, hypotheses, max_len=1))
+    print("BLEU-1 Score: %.4f" % bleu_score.corpus_bleu(references, hypotheses, weights=(1,)))
+    print("GLEU-1 Score: %.4f" % gleu_score.corpus_gleu(references, hypotheses, max_len=1))
     print("NIST-1 Score: %.4f" % nist_score.corpus_nist(references, hypotheses, n=1))
     print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
