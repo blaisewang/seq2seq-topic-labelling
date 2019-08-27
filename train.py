@@ -15,13 +15,9 @@ from models.bidirectional_lstm_attention import Encoder, Decoder
 
 tf.compat.v1.enable_eager_execution()
 
-RNN_DIMENSION = 1024
-
-# Encoder
-encoder = Encoder(RNN_DIMENSION)
-
 mix_input_topic = True
-pre_trained_word2vec = not hasattr(encoder, "embedding")
+decoder_attention = hasattr(Decoder, "attention")
+pre_trained_word2vec = not hasattr(Encoder, "embedding")
 
 path_to_file = "../input/toplab/data_15.csv"
 
@@ -126,6 +122,7 @@ else:
 EPOCH = 50
 PATIENCE = 5
 BATCH_SIZE = 64
+RNN_DIMENSION = 1024
 BUFFER_SIZE = len(input_train)
 vocab_inp_size = len(input_tokenizer.word_index) + 1
 vocab_tar_size = len(target_tokenizer.word_index) + 1
@@ -133,8 +130,7 @@ train_steps_per_epoch = math.ceil(len(input_train) / BATCH_SIZE)
 val_steps_per_epoch = math.ceil(len(input_val) / BATCH_SIZE)
 test_steps_per_epoch = math.ceil(len(input_test) / BATCH_SIZE)
 
-decoder = Decoder(vocab_tar_size, RNN_DIMENSION)
-decoder_attention = hasattr(decoder, "attention")
+encoder, decoder = Encoder(RNN_DIMENSION), Decoder(vocab_tar_size, RNN_DIMENSION)
 
 train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train))
 train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
