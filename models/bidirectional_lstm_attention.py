@@ -111,11 +111,37 @@ assert all(target_tokenizer.index_word[i] == SYMBOL_INDEX[i] for i in [1, 2, 3])
 # Calculate max_length of the vectors
 max_length_inp, max_length_target = max_length(input_vectors), max_length(target_vectors)
 
-# Creating training and test sets using an 70-30 split
-input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
+# Creating training and test sets using an 70-20-10 split
+input_train, input_test = train_test_split(list(reference_dict.keys()), test_size=0.3)
+input_val, input_test = train_test_split(input_test, test_size=0.67)
+
+
+def input2vec(data):
+    inputs = []
+    targets = []
+
+    for input_seq in data:
+        for target_seq in reference_dict[input_seq]:
+            inputs.append(input_seq)
+            targets.append(target_seq)
+
+    inputs = input_tokenizer.texts_to_sequences(inputs)
+    targets = input_tokenizer.texts_to_sequences(targets)
+
+    inputs = tf.keras.preprocessing.sequence.pad_sequences(inputs, maxlen=max_length_inp, padding="post")
+    targets = tf.keras.preprocessing.sequence.pad_sequences(targets, maxlen=max_length_target, padding="post")
+
+    return inputs, targets
+
+
+input_train, target_train = input2vec(input_train)
+input_val, target_val = input2vec(input_val)
+input_test, target_test = input2vec(input_test)
 
 # Creating test and validation sets using 15-15 split, 70-15-15
-input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.5)
+# input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
+# input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.5)
+
 
 BUFFER_SIZE = len(input_train)
 BATCH_SIZE = 64
