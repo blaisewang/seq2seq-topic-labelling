@@ -136,7 +136,7 @@ test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
 test_dataset = test_dataset.batch(BATCH_SIZE)
 
 
-def lstm(units):
+def rnn_layer(units):
     if tf.test.is_gpu_available():
         return tf.keras.layers.CuDNNLSTM(units, return_sequences=True, return_state=True,
                                          recurrent_initializer="glorot_uniform")
@@ -149,8 +149,7 @@ def lstm(units):
 class Encoder(tf.keras.Model):
     def __init__(self, enc_units):
         super(Encoder, self).__init__()
-        self.enc_units = enc_units
-        self.rnn = tf.keras.layers.Bidirectional(lstm(self.enc_units), merge_mode="concat")
+        self.rnn = tf.keras.layers.Bidirectional(rnn_layer(enc_units), merge_mode="concat")
 
     def call(self, x):
         x = tf.cast(x, dtype=tf.float32)
@@ -193,12 +192,11 @@ class BahdanauAttention(tf.keras.Model):
 class Decoder(tf.keras.Model):
     def __init__(self, vocab_size, dec_units):
         super(Decoder, self).__init__()
-        self.dec_units = dec_units
-        self.lstm = lstm(self.dec_units * 2)
+        self.rnn = rnn_layer(dec_units * 2)
         self.fc = tf.keras.layers.Dense(vocab_size)
 
         # used for attention
-        self.attention = BahdanauAttention(self.dec_units)
+        self.attention = BahdanauAttention(dec_units)
 
     def call(self, x, state, encoder_output):
         # x shape == (batch_size, 1, embedding_dim)
@@ -212,8 +210,8 @@ class Decoder(tf.keras.Model):
         # x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
         x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
 
-        # passing the concatenated vector to the LSTM
-        output, state_h, state_c = self.lstm(x, initial_state=state)
+        # passing the concatenated vector to the rnn layer
+        output, state_h, state_c = self.rnn(x, initial_state=state)
 
         # output shape == (batch_size * 1, hidden_size)
         output = tf.reshape(output, (-1, output.shape[2]))
@@ -517,11 +515,7 @@ def generate_topic(sentence):
 
 
 generate_topic("system cost datum tool analysis provide design technology develop information")
-
 generate_topic("treatment patient trial therapy study month week efficacy effect receive")
-
 generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
-
 generate_topic("film movie star director hollywood actor minute direct story witch")
-
 generate_topic("cup cook minute add pepper salt serve tablespoon oil sauce")
