@@ -297,14 +297,11 @@ def train_step(inputs, targets):
     loss = 0
 
     with tf.GradientTape() as tape:
-        # vectors = [indices2vec(indices) for indices in indices_list]
-
         inp_vectors = [indices2vec(indices) for indices in inputs]
 
         enc_output, enc_hidden = encoder(inp_vectors)
         dec_hidden = enc_hidden
 
-        # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
         dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
         dec_input = tf.tile(dec_input, [inputs.shape[0], 1, 1])
 
@@ -317,7 +314,6 @@ def train_step(inputs, targets):
             train_accuracy.update_state(targets[:, t], predictions)
 
             # using teacher forcing
-            # dec_input = tf.expand_dims(targets[:, t], 1)
             dec_input = tf.expand_dims(indices2vec(targets[:, t]), 1)
 
     train_loss((loss / int(targets.shape[1])))
@@ -337,7 +333,6 @@ def test_step(inputs, targets):
 
     predicted_labels = []
 
-    # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]] * BATCH_SIZE, 1)
     dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
     dec_input = tf.tile(dec_input, [inputs.shape[0], 1, 1])
 
@@ -351,7 +346,6 @@ def test_step(inputs, targets):
         predicted = tf.math.argmax(predictions, axis=1)
         predicted_labels.append(list(predicted.numpy()))
 
-        # dec_input = tf.expand_dims(predicted, 1)
         dec_input = tf.expand_dims(indices2vec(predicted), 1)
 
     test_loss((loss / int(targets.shape[1])))
@@ -488,7 +482,6 @@ def evaluate(sentence):
 
     dec_hidden = enc_hidden
 
-    # dec_input = tf.expand_dims([target_lang_tokenizer.word_index["<start>"]], 0)
     dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
 
     for t in range(max_length_target):
