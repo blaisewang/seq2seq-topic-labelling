@@ -1,3 +1,7 @@
+"""
+Bidirectional GRU with attention and pre-trained word2vec model
+"""
+
 import tensorflow as tf
 
 from layers.gru import rnn_layer

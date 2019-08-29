@@ -1,3 +1,7 @@
+"""
+Unidirectional densely-connected encoder and GRU decoder with word embedding
+"""
+
 import tensorflow as tf
 
 from layers.gru import rnn_layer

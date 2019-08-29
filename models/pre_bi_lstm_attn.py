@@ -1,3 +1,7 @@
+"""
+Bidirectional LSTM with attention and pre-trained word2vec model
+"""
+
 import tensorflow as tf
 
 from layers.lstm import rnn_layer

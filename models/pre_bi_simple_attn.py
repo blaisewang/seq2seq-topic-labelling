@@ -1,3 +1,7 @@
+"""
+Bidirectional simple RNN with attention pre-trained word2vec model
+"""
+
 import tensorflow as tf
 
 from layers.simple import rnn_layer

@@ -1,3 +1,7 @@
+"""
+Bahdanau-style attention
+"""
+
 import tensorflow as tf
 
 

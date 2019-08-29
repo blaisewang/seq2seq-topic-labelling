@@ -1,3 +1,7 @@
+"""
+Bidirectional GRU with attention and word embedding
+"""
+
 import tensorflow as tf
 
 from layers.gru import rnn_layer
