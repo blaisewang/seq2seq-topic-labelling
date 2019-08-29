@@ -1,3 +1,9 @@
+"""
+Script to help you train the model locally.
+Otherwise, I would recommend you to train the model on the Kaggle notebook.
+https://www.kaggle.com/blaisewang/topic-label-generation
+"""
+
 import csv
 import math
 import time
@@ -11,15 +17,42 @@ from nltk.translate import bleu_score, gleu_score, nist_score
 from rouge import Rouge
 from sklearn.model_selection import train_test_split
 
-from models.bidirectional_lstm_attention import Encoder, Decoder
+from models.pre_bi_gru_attn import Encoder, Decoder
 
+# enable eager execution for TensorFlow < 2.0
 tf.compat.v1.enable_eager_execution()
 
-mix_input_topic = True
-decoder_attention = hasattr(Decoder, "attention")
-pre_trained_word2vec = not hasattr(Encoder, "embedding")
+# data_15 means threshold value is 1.5
+path_to_file = "./input/data_15.csv"
 
-path_to_file = "../input/toplab/data_15.csv"
+# word embedding
+embedding_size = 300
+
+# True for applying the early stopping
+early_stopping = False
+
+# True for splitting the same input sequences into different data sets
+mix_input_topic = True
+
+# True for applying the attention mechanism
+decoder_attention = Decoder.attention_mechanism
+
+# True for applying the pre-trained word2vec
+pre_trained_word2vec = Encoder.pre_trained_word2vec
+
+if pre_trained_word2vec:
+    model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin",
+                                                            binary=True)
+    vocab = model.vocab
+
+    embedding_size = 300
+
+    token_index = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
+
+    token_vector = {"<start>": tf.ones(embedding_size),
+                    "<end>": tf.negative(tf.ones(embedding_size)),
+                    "<unk>": tf.zeros(embedding_size),
+                    "<pad>": tf.tile([0.5], [embedding_size])}
 
 
 def preprocess_sentence(sent):
@@ -96,6 +129,16 @@ def input2vec(data):
     return inputs, targets
 
 
+def index2vec(index):
+    if index <= 3:
+        return token_vector[token_index[index]]
+    return model.word_vec(model.index2word[index])
+
+
+def indices2vec(indices):
+    return [index2vec(int(index)) for index in indices]
+
+
 # creating cleaned input, output pairs
 input_lang, target_lang = create_dataset(path_to_file)
 
@@ -119,21 +162,16 @@ else:
     input_val, target_val = input2vec(input_val)
     input_test, target_test = input2vec(input_test)
 
-EPOCH = 50
-PATIENCE = 5
 BATCH_SIZE = 64
-RNN_DIMENSION = 1024
-BUFFER_SIZE = len(input_train)
+buffer_size = len(input_train)
 vocab_inp_size = len(input_tokenizer.word_index) + 1
 vocab_tar_size = len(target_tokenizer.word_index) + 1
 train_steps_per_epoch = math.ceil(len(input_train) / BATCH_SIZE)
 val_steps_per_epoch = math.ceil(len(input_val) / BATCH_SIZE)
 test_steps_per_epoch = math.ceil(len(input_test) / BATCH_SIZE)
 
-encoder, decoder = Encoder(RNN_DIMENSION), Decoder(vocab_tar_size, RNN_DIMENSION)
-
 train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train))
-train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+train_dataset = train_dataset.shuffle(buffer_size).batch(BATCH_SIZE)
 
 val_dataset = tf.data.Dataset.from_tensor_slices((input_val, target_val))
 val_dataset = val_dataset.batch(BATCH_SIZE)
@@ -141,29 +179,8 @@ val_dataset = val_dataset.batch(BATCH_SIZE)
 test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
 test_dataset = test_dataset.batch(BATCH_SIZE)
 
-if pre_trained_word2vec:
-    model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin",
-                                                            binary=True)
-    vocab = model.vocab
-
-    embedding_size = 300
-
-    token_index = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
-
-    token_vector = {"<start>": tf.ones(embedding_size),
-                    "<end>": tf.negative(tf.ones(embedding_size)),
-                    "<unk>": tf.zeros(embedding_size),
-                    "<pad>": tf.tile([0.5], [embedding_size])}
-
-
-def index2vec(index):
-    if index <= 3:
-        return token_vector[token_index[index]]
-    return model.word_vec(model.index2word[index])
-
-
-def indices2vec(indices):
-    return [index2vec(int(index)) for index in indices]
+RNN_DIMENSION = 1024
+encoder, decoder = Encoder(RNN_DIMENSION), Decoder(vocab_tar_size, RNN_DIMENSION)
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -234,9 +251,9 @@ def train_step(inputs, targets):
         for t in range(1, targets.shape[1]):
             # passing enc_output to the decoder
             if decoder_attention:
-                predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
+                predictions, dec_hidden, _ = decoder(dec_input, state=dec_hidden, encoder_output=enc_output)
             else:
-                predictions, dec_hidden = decoder(dec_input, dec_hidden)
+                predictions, dec_hidden = decoder(dec_input, state=dec_hidden)
 
             loss += loss_function(targets[:, t], predictions)
             train_accuracy.update_state(targets[:, t], predictions)
@@ -279,9 +296,9 @@ def test_step(inputs, targets):
     for t in range(1, max_length_target):
         # passing enc_output to the decoder
         if decoder_attention:
-            predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
+            predictions, dec_hidden, _ = decoder(dec_input, state=dec_hidden, encoder_output=enc_output)
         else:
-            predictions, dec_hidden = decoder(dec_input, dec_hidden)
+            predictions, dec_hidden = decoder(dec_input, state=dec_hidden)
 
         loss += loss_function(targets[:, t], predictions)
         test_accuracy.update_state(targets[:, t], predictions)
@@ -367,8 +384,10 @@ def evaluation_metrics(dataset, steps, size):
     print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
 
-# last_score = 0
-# stop_flags = []
+EPOCH = 20
+PATIENCE = 5
+stop_flags = []
+last_loss = float("inf")
 
 for epoch in range(EPOCH):
     start = time.time()
@@ -379,7 +398,7 @@ for epoch in range(EPOCH):
     test_loss.reset_states()
     test_accuracy.reset_states()
 
-    train_dataset = train_dataset.shuffle(BUFFER_SIZE)
+    train_dataset = train_dataset.shuffle(buffer_size)
 
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
@@ -390,17 +409,18 @@ for epoch in range(EPOCH):
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
     print("%.4f secs taken for epoch %d\n" % (time.time() - start, epoch + 1))
 
-    # # early stopping
-    # if test_loss.result() < last_score or abs(last_score - test_loss.result()) < 1e-4:
-    #     stop_flags.append(True)
-    # else:
-    #     stop_flags.clear()
-    #
-    # if len(stop_flags) >= PATIENCE:
-    #     print("\nEarly stopping\n")
-    #     break
+    # early stopping
+    if early_stopping:
+        if test_loss.result() > last_loss or abs(last_loss - test_loss.result()) < 1e-4:
+            stop_flags.append(True)
+        else:
+            stop_flags.clear()
 
-    last_score = test_loss.result()
+        if len(stop_flags) >= PATIENCE:
+            print("\nEarly stopping\n")
+            break
+
+        last_loss = test_loss.result()
 
 test_loss.reset_states()
 test_accuracy.reset_states()
@@ -410,10 +430,32 @@ evaluation_metrics(test_dataset, test_steps_per_epoch, len(input_test))
 print("Test Loss: %.4f Accuracy: %.4f\n" % (test_loss.result(), test_accuracy.result()))
 
 
-def evaluate(sentence):
-    attention_plot = np.zeros((max_length_target, max_length_inp))
+# function for plotting the attention weights
+def plot_attention(attention, result, sentence):
+    result = result.split()
+    sentence = sentence.split()
+    attention = attention[:len(result), :len(sentence)]
 
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.matshow(attention, cmap="viridis")
+
+    font_dict = {"fontsize": 14}
+
+    ax.set_xticklabels([""] + sentence, fontdict=font_dict, rotation=90)
+    ax.set_yticklabels([""] + result, fontdict=font_dict)
+
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.show()
+
+
+def sample_evaluation(sentence):
+    result = ""
+    enc_out = None
     sentence = preprocess_sentence(sentence)
+    attention_plot = np.zeros((max_length_target, max_length_inp))
 
     inputs = [input_tokenizer.word_index[w] for w in sentence.split(" ")]
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=max_length_inp, padding="post")
@@ -422,10 +464,6 @@ def evaluate(sentence):
         inputs = [indices2vec(indices) for indices in inputs]
     else:
         inputs = tf.convert_to_tensor(inputs)
-
-    result = ""
-
-    enc_out = None
 
     if decoder_attention:
         enc_out, enc_hidden = encoder(inputs)
@@ -442,23 +480,19 @@ def evaluate(sentence):
     for t in range(max_length_target):
 
         if decoder_attention:
-            predictions, dec_hidden, attention_weights = decoder(dec_input, dec_hidden, enc_out)
+            predictions, dec_hidden, attention_weights = decoder(dec_input, state=dec_hidden, encoder_output=enc_out)
 
             # storing the attention weights to plot later on
             attention_weights = tf.reshape(attention_weights, (-1,))
             attention_plot[t] = attention_weights.numpy()
         else:
-            predictions, dec_hidden = decoder(dec_input, dec_hidden)
+            predictions, dec_hidden = decoder(dec_input, state=dec_hidden)
 
         predicted_id = tf.math.argmax(predictions[0]).numpy()
-
         result += target_tokenizer.index_word[predicted_id] + " "
 
         if target_tokenizer.index_word[predicted_id] == "<end>":
-            attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
-            plot_attention(attention_plot, sentence.split(" "), result.split(" "))
-
-            return result.strip(), sentence
+            break
 
         # the predicted ID is fed back into the model
         if pre_trained_word2vec:
@@ -467,31 +501,14 @@ def evaluate(sentence):
             dec_input = tf.expand_dims([predicted_id], 0)
 
     if decoder_attention:
-        attention_plot = attention_plot[:len(result.split(" ")), :len(sentence.split(" "))]
-        plot_attention(attention_plot, sentence.split(" "), result.split(" "))
+        result = result.strip()
+        plot_attention(attention_plot, result, sentence)
 
-    return result.strip(), sentence
-
-
-# function for plotting the attention weights
-def plot_attention(attention, sentence, predicted_sentence):
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(1, 1, 1)
-    ax.matshow(attention, cmap="viridis")
-
-    font_dict = {"fontsize": 14}
-
-    ax.set_xticklabels([""] + sentence, fontdict=font_dict, rotation=90)
-    ax.set_yticklabels([""] + predicted_sentence, fontdict=font_dict)
-
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
-
-    plt.show()
+    return result, sentence
 
 
 def generate_topic(sentence):
-    result, sentence = evaluate(sentence)
+    result, sentence = sample_evaluation(sentence)
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
@@ -500,7 +517,11 @@ def generate_topic(sentence):
 
 
 generate_topic("system cost datum tool analysis provide design technology develop information")
+
 generate_topic("treatment patient trial therapy study month week efficacy effect receive")
+
 generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
+
 generate_topic("film movie star director hollywood actor minute direct story witch")
+
 generate_topic("cup cook minute add pepper salt serve tablespoon oil sauce")
