@@ -3,7 +3,7 @@ gensim
 rouge
 tensorflow == 1.14.0
 matplotlib
-nltk == 3.4.5
+nltk >= 3.4.5
 numpy
 scikit-learn
 wget
