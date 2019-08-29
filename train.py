@@ -40,7 +40,7 @@ decoder_attention = Decoder.attention_mechanism
 # True for applying the pre-trained word2vec
 pre_trained_word2vec = Encoder.pre_trained_word2vec
 
-if pre_trained_word2vec:
+if pre_trained_word2vec and "model" not in locals():
     model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin",
                                                             binary=True)
     vocab = model.vocab
@@ -179,8 +179,15 @@ val_dataset = val_dataset.batch(BATCH_SIZE)
 test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
 test_dataset = test_dataset.batch(BATCH_SIZE)
 
+# RNN units dimension
 RNN_DIMENSION = 1024
-encoder, decoder = Encoder(RNN_DIMENSION), Decoder(vocab_tar_size, RNN_DIMENSION)
+
+# initialise encoder decoder with pre_trained_word2vec flag
+if pre_trained_word2vec:
+    encoder, decoder = Encoder(RNN_DIMENSION), Decoder(vocab_tar_size, RNN_DIMENSION)
+else:
+    encoder = Encoder(vocab_inp_size, embedding_size, RNN_DIMENSION)
+    decoder = Decoder(vocab_tar_size, embedding_size, RNN_DIMENSION)
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
