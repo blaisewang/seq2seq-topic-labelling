@@ -114,3 +114,6 @@ venv.bak/
 
 # word2vec model
 *.bin
+
+# module requirement
+!requirements.txt
