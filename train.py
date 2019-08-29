@@ -40,6 +40,7 @@ decoder_attention = Decoder.attention_mechanism
 # True for applying the pre-trained word2vec
 pre_trained_word2vec = Encoder.pre_trained_word2vec
 
+# load the word2vec model
 if pre_trained_word2vec and "model" not in locals():
     model = gensim.models.KeyedVectors.load_word2vec_format("./word2vec/GoogleNews-vectors-negative300.bin",
                                                             binary=True)
@@ -49,18 +50,21 @@ if pre_trained_word2vec and "model" not in locals():
 
     token_index = {0: "<pad>", 1: "<start>", 2: "<end>", 3: "<unk>"}
 
+    # word vectors for tokens
     token_vector = {"<start>": tf.ones(embedding_size),
                     "<end>": tf.negative(tf.ones(embedding_size)),
                     "<unk>": tf.zeros(embedding_size),
                     "<pad>": tf.tile([0.5], [embedding_size])}
 
 
+# function for pre-processing the sentences
 def preprocess_sentence(sent):
     if pre_trained_word2vec:
         return "<start> " + " ".join(topic if topic in vocab else "<unk>" for topic in sent.split()) + " <end>"
     return "<start> " + sent + " <end>"
 
 
+# function for loading and split the dataset
 def create_dataset(path):
     topics = []
     labels = []
@@ -85,10 +89,12 @@ def create_dataset(path):
     return topics, labels
 
 
+# max sentence length
 def max_length(vectors):
     return max(len(vector) for vector in vectors)
 
 
+# tokenize the sentence
 def tokenize(lang):
     lang_tokenizer = tf.keras.preprocessing.text.Tokenizer(filters="")
     lang_tokenizer.fit_on_texts(lang)
@@ -100,6 +106,7 @@ def tokenize(lang):
     return indices_list, lang_tokenizer
 
 
+# {topic: [label_1, label_2, ...]}
 def create_reference_dict(inputs, targets):
     ref_dict = {}
 
@@ -111,6 +118,19 @@ def create_reference_dict(inputs, targets):
     return ref_dict
 
 
+# convert word index to vector
+def index2vec(index):
+    if index <= 3:
+        return token_vector[token_index[index]]
+    return model.word_vec(model.index2word[index])
+
+
+# convert a list of indices to vectors
+def indices2vec(indices):
+    return [index2vec(int(index)) for index in indices]
+
+
+# input sequence to input & target vectors
 def input2vec(data):
     inputs = []
     targets = []
@@ -129,16 +149,6 @@ def input2vec(data):
     return inputs, targets
 
 
-def index2vec(index):
-    if index <= 3:
-        return token_vector[token_index[index]]
-    return model.word_vec(model.index2word[index])
-
-
-def indices2vec(indices):
-    return [index2vec(int(index)) for index in indices]
-
-
 # creating cleaned input, output pairs
 input_lang, target_lang = create_dataset(path_to_file)
 
@@ -147,10 +157,10 @@ reference_dict = create_reference_dict(input_lang, target_lang)
 input_vectors, input_tokenizer = tokenize(input_lang)
 target_vectors, target_tokenizer = tokenize(target_lang)
 
-# Calculate max_length of the vectors
+# calculate max_length of the vectors
 max_length_inp, max_length_target = max_length(input_vectors), max_length(target_vectors)
 
-# Creating training, val, test sets using an 70-20-10 split
+# creating training, val, test sets using an 70-20-10 split
 if mix_input_topic:
     input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
     input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.67)
@@ -170,12 +180,15 @@ train_steps_per_epoch = math.ceil(len(input_train) / BATCH_SIZE)
 val_steps_per_epoch = math.ceil(len(input_val) / BATCH_SIZE)
 test_steps_per_epoch = math.ceil(len(input_test) / BATCH_SIZE)
 
+# train dataset
 train_dataset = tf.data.Dataset.from_tensor_slices((input_train, target_train))
 train_dataset = train_dataset.shuffle(buffer_size).batch(BATCH_SIZE)
 
+# validation dataset
 val_dataset = tf.data.Dataset.from_tensor_slices((input_val, target_val))
 val_dataset = val_dataset.batch(BATCH_SIZE)
 
+# test dataset
 test_dataset = tf.data.Dataset.from_tensor_slices((input_test, target_test))
 test_dataset = test_dataset.batch(BATCH_SIZE)
 
@@ -190,6 +203,7 @@ else:
     decoder = Decoder(vocab_tar_size, embedding_size, RNN_DIMENSION)
 
 
+# custom learning rate scheduler
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
     def __init__(self, warm_up_steps=2000):
@@ -215,6 +229,7 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, be
 loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
 
+# loss function
 def loss_function(real, pred):
     mask = tf.math.logical_not(tf.math.equal(real, 0))
     loss_ = loss_object(real, pred)
@@ -225,13 +240,16 @@ def loss_function(real, pred):
     return tf.reduce_mean(loss_)
 
 
+# loss & accuracy for training
 train_loss = tf.keras.metrics.Mean(name="train_loss")
 train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name="train_accuracy")
 
+# loss & accuracy for validation and testing
 test_loss = tf.keras.metrics.Mean(name="test_loss")
 test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name="test_accuracy")
 
 
+# training function
 def train_step(inputs, targets):
     loss = 0
     enc_output = None
@@ -254,7 +272,7 @@ def train_step(inputs, targets):
         else:
             dec_input = tf.expand_dims([target_tokenizer.word_index["<start>"]] * targets.shape[0], 1)
 
-        # Teacher forcing - feeding the target as the next input
+        # teacher forcing - feeding the target as the next input
         for t in range(1, targets.shape[1]):
             # passing enc_output to the decoder
             if decoder_attention:
@@ -278,6 +296,7 @@ def train_step(inputs, targets):
     optimizer.apply_gradients(zip(gradients, variables))
 
 
+# validation & testing function
 def test_step(inputs, targets):
     loss = 0
     enc_output = None
@@ -320,7 +339,10 @@ def test_step(inputs, targets):
 
     test_loss((loss / int(targets.shape[1])))
 
+    # result for evaluation
     result = []
+
+    # rotate the predicted matrix
     for label in zip(*predicted_labels):
         result.append([])
         for value in label:
@@ -331,20 +353,24 @@ def test_step(inputs, targets):
     return result
 
 
+# split input and remove <start> & <end> tokens
 def word_split(sent):
     return [label.split()[1:-1] for label in reference_dict[sent]]
 
 
+# sum the rouge score
 def rouge_sum_score(rouge_dict):
     return sum(value for fpr in rouge_dict.values() for value in fpr.values())
 
 
+# format the rouge dictionary for output
 def rouge_dict_format(rouge_dict):
     return "{rouge-1: {f: %f, p: %f, r: %f}, rouge-l: {f: %f, p: %f, r: %f}}" % (
         rouge_dict["rouge-1"]["f"], rouge_dict["rouge-1"]["p"], rouge_dict["rouge-1"]["r"],
         rouge_dict["rouge-l"]["f"], rouge_dict["rouge-l"]["p"], rouge_dict["rouge-l"]["r"])
 
 
+# BLEU-1, GLEU-1, NIST-1, ROUGE-1 & ROUGE-L evaluation metrics
 def evaluation_metrics(dataset, steps, size):
     references = []
     hypotheses = []
@@ -354,6 +380,7 @@ def evaluation_metrics(dataset, steps, size):
                   "rouge-2": {"f": 0.0, "p": 0.0, "r": 0.0},
                   "rouge-l": {"f": 0.0, "p": 0.0, "r": 0.0}}
 
+    # make references & hypotheses lists
     for inputs, targets in dataset.take(steps):
         for labels in target_tokenizer.sequences_to_texts(test_step(inputs, targets)):
             if len(labels) > 0:
@@ -369,18 +396,22 @@ def evaluation_metrics(dataset, steps, size):
                      "rouge-2": {"f": 0.0, "p": 0.0, "r": 0.0},
                      "rouge-l": {"f": 0.0, "p": 0.0, "r": 0.0}}
 
+        # one hypothesis may have several references
         for reference in references[index]:
             try:
                 score = rouge.get_scores(" ".join(hypothesis), " ".join(reference))[0]
+                # keep the best score
                 if rouge_sum_score(score) > rouge_sum_score(max_score):
                     max_score = score
             except ValueError:
                 pass
 
         for method_key in rouge_dict:
+            # fpr for traversing f1 precision recall
             for fpr in rouge_dict[method_key]:
                 rouge_dict[method_key][fpr] += max_score[method_key][fpr]
 
+    # average
     for method_key in rouge_dict:
         for fpr in rouge_dict[method_key]:
             rouge_dict[method_key][fpr] /= size
@@ -399,12 +430,14 @@ last_loss = float("inf")
 for epoch in range(EPOCH):
     start = time.time()
 
+    # reset the loss and accuracy each epoch
     train_loss.reset_states()
     train_accuracy.reset_states()
 
     test_loss.reset_states()
     test_accuracy.reset_states()
 
+    # shuffle the dataset each epoch
     train_dataset = train_dataset.shuffle(buffer_size)
 
     for inp, target in train_dataset.take(train_steps_per_epoch):
@@ -423,12 +456,14 @@ for epoch in range(EPOCH):
         else:
             stop_flags.clear()
 
+        # loss is continuously increasing
         if len(stop_flags) >= PATIENCE:
             print("\nEarly stopping\n")
             break
 
         last_loss = test_loss.result()
 
+# reset the loss and accuracy
 test_loss.reset_states()
 test_accuracy.reset_states()
 
@@ -458,6 +493,7 @@ def plot_attention(attention, result, sentence):
     plt.show()
 
 
+# evaluate the samples
 def sample_evaluation(sentence):
     result = ""
     enc_out = None
@@ -498,6 +534,7 @@ def sample_evaluation(sentence):
         predicted_id = tf.math.argmax(predictions[0]).numpy()
         result += target_tokenizer.index_word[predicted_id] + " "
 
+        # stop for reaching the end of the predicted sequence
         if target_tokenizer.index_word[predicted_id] == "<end>":
             break
 
@@ -514,21 +551,23 @@ def sample_evaluation(sentence):
     return result, sentence
 
 
-def generate_topic(sentence):
+# output the predicted label
+def generate_label(sentence):
     result, sentence = sample_evaluation(sentence)
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
+    # output the references
     if sentence in reference_dict:
         print("Target topic: %s\n" % ', '.join(reference_dict[sentence]))
 
 
-generate_topic("system cost datum tool analysis provide design technology develop information")
+generate_label("system cost datum tool analysis provide design technology develop information")
 
-generate_topic("treatment patient trial therapy study month week efficacy effect receive")
+generate_label("treatment patient trial therapy study month week efficacy effect receive")
 
-generate_topic("case report lesion present rare diagnosis lymphoma mass cyst reveal")
+generate_label("case report lesion present rare diagnosis lymphoma mass cyst reveal")
 
-generate_topic("film movie star director hollywood actor minute direct story witch")
+generate_label("film movie star director hollywood actor minute direct story witch")
 
-generate_topic("cup cook minute add pepper salt serve tablespoon oil sauce")
+generate_label("cup cook minute add pepper salt serve tablespoon oil sauce")
