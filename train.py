@@ -429,7 +429,7 @@ def evaluation_metrics(dataset, steps, size):
 
 
 EPOCH = 50
-PATIENCE = 10
+PATIENCE = 20
 stop_flags = []
 last_score = float("inf")
 
@@ -457,7 +457,7 @@ for epoch in range(EPOCH):
 
     # early stopping
     if early_stopping:
-        if sum_score < last_score or abs(last_score - test_loss.result()) < 1e-4:
+        if sum_score < last_score or abs(sum_score - last_score) < 1e-4:
             stop_flags.append(True)
         else:
             stop_flags.clear()
