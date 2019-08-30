@@ -29,10 +29,10 @@ path_to_file = "./input/data_15.csv"
 embedding_size = 300
 
 # True for applying the early stopping
-early_stopping = False
+early_stopping = True
 
 # True for splitting the same input sequences into different data sets
-mix_input_topic = True
+mix_input_topic = False
 
 # True for applying the attention mechanism
 decoder_attention = Decoder.attention_mechanism
@@ -399,10 +399,10 @@ def evaluation_metrics(dataset, steps, size):
         # one hypothesis may have several references
         for reference in references[index]:
             try:
-                score = rouge.get_scores(" ".join(hypothesis), " ".join(reference))[0]
+                rouge_score = rouge.get_scores(" ".join(hypothesis), " ".join(reference))[0]
                 # keep the best score
-                if rouge_sum_score(score) > rouge_sum_score(max_score):
-                    max_score = score
+                if rouge_sum_score(rouge_score) > rouge_sum_score(max_score):
+                    max_score = rouge_score
             except ValueError:
                 pass
 
@@ -416,16 +416,22 @@ def evaluation_metrics(dataset, steps, size):
         for fpr in rouge_dict[method_key]:
             rouge_dict[method_key][fpr] /= size
 
-    print("BLEU-1 Score: %.4f" % bleu_score.corpus_bleu(references, hypotheses, weights=(1,)))
-    print("GLEU-1 Score: %.4f" % gleu_score.corpus_gleu(references, hypotheses, max_len=1))
-    print("NIST-1 Score: %.4f" % nist_score.corpus_nist(references, hypotheses, n=1))
+    bleu = bleu_score.corpus_bleu(references, hypotheses, weights=(1,))
+    gleu = gleu_score.corpus_gleu(references, hypotheses, max_len=1)
+    nist = nist_score.corpus_nist(references, hypotheses, n=1)
+
+    print("BLEU-1 Score: %.4f" % bleu)
+    print("GLEU-1 Score: %.4f" % gleu)
+    print("NIST-1 Score: %.4f" % nist)
     print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
+    return bleu + gleu + nist + rouge_sum_score(rouge_dict)
 
-EPOCH = 20
-PATIENCE = 5
+
+EPOCH = 50
+PATIENCE = 10
 stop_flags = []
-last_loss = float("inf")
+last_score = float("inf")
 
 for epoch in range(EPOCH):
     start = time.time()
@@ -443,7 +449,7 @@ for epoch in range(EPOCH):
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
 
-    evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
+    sum_score = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
@@ -451,17 +457,17 @@ for epoch in range(EPOCH):
 
     # early stopping
     if early_stopping:
-        if test_loss.result() > last_loss or abs(last_loss - test_loss.result()) < 1e-4:
+        if sum_score < last_score or abs(last_score - test_loss.result()) < 1e-4:
             stop_flags.append(True)
         else:
             stop_flags.clear()
 
-        # loss is continuously increasing
+        # score is continuously decreasing
         if len(stop_flags) >= PATIENCE:
             print("\nEarly stopping\n")
             break
 
-        last_loss = test_loss.result()
+        last_score = sum_score
 
 # reset the loss and accuracy
 test_loss.reset_states()
@@ -562,7 +568,7 @@ def generate_label(sentence):
         print("Target topic: %s\n" % ', '.join(reference_dict[sentence]))
 
 
-# sample test
+# sample test from the test dataset
 test_iter = test_dataset.make_one_shot_iterator()
 sample = test_iter.get_next()[0]
 
