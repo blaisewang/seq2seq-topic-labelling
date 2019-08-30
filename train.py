@@ -493,8 +493,8 @@ def plot_attention(attention, result, sentence):
     plt.show()
 
 
-# evaluate the samples
-def sample_evaluation(sentence):
+# test the samples
+def sample_test(sentence):
     result = ""
     enc_out = None
     sentence = preprocess_sentence(sentence)
@@ -553,7 +553,7 @@ def sample_evaluation(sentence):
 
 # output the predicted label
 def generate_label(sentence):
-    result, sentence = sample_evaluation(sentence)
+    result, sentence = sample_test(sentence)
 
     print("Input labels: %s" % sentence)
     print("Predicted topic: %s" % "<start> " + result)
@@ -562,12 +562,10 @@ def generate_label(sentence):
         print("Target topic: %s\n" % ', '.join(reference_dict[sentence]))
 
 
-generate_label("system cost datum tool analysis provide design technology develop information")
+# sample test
+test_iter = test_dataset.make_one_shot_iterator()
+sample = test_iter.get_next()[0]
 
-generate_label("treatment patient trial therapy study month week efficacy effect receive")
-
-generate_label("case report lesion present rare diagnosis lymphoma mass cyst reveal")
-
-generate_label("film movie star director hollywood actor minute direct story witch")
-
-generate_label("cup cook minute add pepper salt serve tablespoon oil sauce")
+for i in [0, 20, 40, 60]:
+    text = input_tokenizer.sequences_to_texts([sample[i].numpy()[1:-1]])[0]
+    generate_label(text)
