@@ -202,6 +202,15 @@ else:
     encoder = Encoder(vocab_inp_size, embedding_size, RNN_DIMENSION)
     decoder = Decoder(vocab_tar_size, embedding_size, RNN_DIMENSION)
 
+train_l = []
+train_acc = []
+val_l = []
+val_acc = []
+bleu_scores = []
+gleu_scores = []
+nist_scores = []
+rouge_1l_dicts = []
+
 
 # custom learning rate scheduler
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -425,7 +434,66 @@ def evaluation_metrics(dataset, steps, size):
     print("NIST-1 Score: %.4f" % nist)
     print("ROUGE Scores: %s" % rouge_dict_format(rouge_dict))
 
-    return bleu + gleu + nist + rouge_sum_score(rouge_dict)
+    return bleu, gleu, nist, rouge_dict
+
+
+# plot a single subplot
+def single_plot(ax, epochs, data, title):
+    ax.plot(epochs, data)
+    ax.set_xlabel("Epoch")
+    ax.set_title(title)
+
+
+# plot loss, accuracy, BLEU-1, GLEU-1, NIST-1, ROUGE-1, ROUGE-L result
+def plot_result(t_l, t_acc, v_l, v_acc, bleu, gleu, nist, rouge_1l):
+    epochs = list(range(1, len(t_l) + 1))
+    plt.figure(figsize=(16, 16))
+
+    ax1 = plt.subplot2grid((4, 6), (0, 0), colspan=3)
+    ax1.plot(epochs, t_l, label="Train Loss")
+    ax1.plot(epochs, v_l, label="Valid Loss")
+    ax1.legend()
+    ax1.set_ylim([0, 3])
+    ax1.set_xlabel("Epoch")
+    ax1.set_title("Loss")
+
+    ax2 = plt.subplot2grid((4, 6), (0, 3), colspan=3)
+    ax2.plot(epochs, t_acc, label="Train Accuracy")
+    ax2.plot(epochs, v_acc, label="Valid Accuracy")
+    ax2.legend()
+    ax2.set_ylim([0, 1])
+    ax2.set_xlabel("Epoch")
+    ax2.set_title("Accuracy")
+
+    rouge_1_f = [rouge_dict["rouge-1"]["f"] for rouge_dict in rouge_1l]
+    rouge_1_p = [rouge_dict["rouge-1"]["p"] for rouge_dict in rouge_1l]
+    rouge_1_r = [rouge_dict["rouge-1"]["r"] for rouge_dict in rouge_1l]
+    rouge_l_f = [rouge_dict["rouge-l"]["f"] for rouge_dict in rouge_1l]
+    rouge_l_p = [rouge_dict["rouge-l"]["p"] for rouge_dict in rouge_1l]
+    rouge_l_r = [rouge_dict["rouge-l"]["r"] for rouge_dict in rouge_1l]
+
+    ax3 = plt.subplot2grid((4, 6), (1, 0), colspan=2)
+    ax4 = plt.subplot2grid((4, 6), (1, 2), colspan=2)
+    ax5 = plt.subplot2grid((4, 6), (1, 4), colspan=2)
+    ax6 = plt.subplot2grid((4, 6), (2, 0), colspan=2)
+    ax7 = plt.subplot2grid((4, 6), (2, 2), colspan=2)
+    ax8 = plt.subplot2grid((4, 6), (2, 4), colspan=2)
+    ax9 = plt.subplot2grid((4, 6), (3, 0), colspan=2)
+    ax10 = plt.subplot2grid((4, 6), (3, 2), colspan=2)
+    ax11 = plt.subplot2grid((4, 6), (3, 4), colspan=2)
+
+    single_plot(ax3, epochs, bleu, "BLEU-1 Scores")
+    single_plot(ax4, epochs, gleu, "GLEU-1 Scores")
+    single_plot(ax5, epochs, nist, "NIST-1 Scores")
+    single_plot(ax6, epochs, rouge_1_f, "ROUGE-1 F1")
+    single_plot(ax7, epochs, rouge_1_p, "ROUGE-1 Precision")
+    single_plot(ax8, epochs, rouge_1_r, "ROUGE-1 Recall")
+    single_plot(ax9, epochs, rouge_l_f, "ROUGE-L F1")
+    single_plot(ax10, epochs, rouge_l_p, "ROUGE-L Precision")
+    single_plot(ax11, epochs, rouge_l_r, "ROUGE-L Recall")
+
+    plt.tight_layout()
+    plt.show()
 
 
 EPOCH = 50
@@ -449,11 +517,21 @@ for epoch in range(EPOCH):
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
 
-    sum_score = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
+    blue_1, gleu_1, nist_1, rouge_1l_dict = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
+    sum_score = blue_1 + gleu_1 + nist_1 + rouge_sum_score(rouge_1l_dict)
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
     print("%.4f secs taken for epoch %d\n" % (time.time() - start, epoch + 1))
+
+    train_l.append(train_loss.result().numpy())
+    train_acc.append(train_accuracy.result().numpy())
+    val_l.append(test_loss.result().numpy())
+    val_acc.append(test_accuracy.result().numpy())
+    bleu_scores.append(blue_1)
+    gleu_scores.append(gleu_1)
+    nist_scores.append(nist_1)
+    rouge_1l_dicts.append(rouge_1l_dict)
 
     # early stopping
     if early_stopping:
@@ -468,6 +546,9 @@ for epoch in range(EPOCH):
             break
 
         last_score = sum_score
+
+# plot result
+plot_result(train_l, train_acc, val_l, val_acc, bleu_scores, gleu_scores, nist_scores, rouge_1l_dicts)
 
 # reset the loss and accuracy
 test_loss.reset_states()
