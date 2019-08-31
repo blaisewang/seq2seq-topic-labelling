@@ -1,5 +1,5 @@
 """
-Unidirectional densely-connected encoder and GRU decoder with word embedding
+Unidirectional densely-connected NN encoder and GRU decoder with word embedding
 """
 
 import tensorflow as tf
