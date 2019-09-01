@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-l2 = tf.keras.regularizers.l2(0.02)
+l2 = tf.keras.regularizers.l2(0.01)
 
 
 def rnn_layer(units):
