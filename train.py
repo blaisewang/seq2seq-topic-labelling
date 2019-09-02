@@ -497,9 +497,9 @@ def plot_result(t_l, t_acc, v_l, v_acc, bleu, gleu, nist, rouge_1l):
 
 
 EPOCH = 50
-PATIENCE = 20
+PATIENCE = 5
 stop_flags = []
-last_score = float("inf")
+last_loss = float("inf")
 
 for epoch in range(EPOCH):
     start = time.time()
@@ -518,7 +518,6 @@ for epoch in range(EPOCH):
         train_step(inp, target)
 
     blue_1, gleu_1, nist_1, rouge_1l_dict = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
-    sum_score = blue_1 + gleu_1 + nist_1 + rouge_sum_score(rouge_1l_dict)
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
@@ -534,8 +533,10 @@ for epoch in range(EPOCH):
     rouge_1l_dicts.append(rouge_1l_dict)
 
     # early stopping
+    val_loss = test_loss.result().numpy()
+
     if early_stopping:
-        if sum_score < last_score or abs(sum_score - last_score) < 1e-4:
+        if val_loss > last_loss or abs(val_loss - last_loss) < 1e-4:
             stop_flags.append(True)
         else:
             stop_flags.clear()
@@ -545,7 +546,7 @@ for epoch in range(EPOCH):
             print("\nEarly stopping\n")
             break
 
-        last_score = sum_score
+        last_loss = val_loss
 
 # plot result
 plot_result(train_l, train_acc, val_l, val_acc, bleu_scores, gleu_scores, nist_scores, rouge_1l_dicts)
