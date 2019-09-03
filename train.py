@@ -170,8 +170,8 @@ else:
 
     train_vocab = set([word for sentence in input_train for word in sentence.split()])
     test_vocab = set([word for sentence in input_test for word in sentence.split()])
-    intersection_vocab = train_vocab.intersection(test_vocab)
-    print("%.2f %% word overlap in training set" % (len(intersection_vocab) / len(train_vocab) * 100))
+    intersect_vocab = train_vocab.intersection(test_vocab)
+    print("%.2f%% of words in the test set are unknown" % ((1 - len(intersect_vocab) / len(test_vocab)) * 100))
 
     input_train, target_train = input2vec(input_train)
     input_val, target_val = input2vec(input_val)
