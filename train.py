@@ -166,7 +166,12 @@ if mix_input_topic:
     input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.67)
 else:
     input_train, input_test = train_test_split(list(reference_dict.keys()), test_size=0.3)
-    input_val, input_test = train_test_split(input_test, test_size=0.67)
+    input_val, input_test = train_test_split(input_test, test_size=0.33)
+
+    train_vocab = set([word for sentence in input_train for word in sentence.split()])
+    test_vocab = set([word for sentence in input_test for word in sentence.split()])
+    intersection_vocab = train_vocab.intersection(test_vocab)
+    print("%.2f %% word overlap in training set" % (len(intersection_vocab) / len(train_vocab) * 100))
 
     input_train, target_train = input2vec(input_train)
     input_val, target_val = input2vec(input_val)
