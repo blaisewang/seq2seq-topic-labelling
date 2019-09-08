@@ -59,7 +59,7 @@ if pre_trained_word2vec and "model" not in locals():
 
 # function for pre-processing the sentences
 def preprocess_sentence(sent):
-    # Google pre-trained word2vec uses _ instead of -
+    # Google pre-trained word2vec model uses _ instead of -
     sent = sent.replace("-", "_")
 
     if pre_trained_word2vec:
