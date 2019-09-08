@@ -122,15 +122,15 @@ def create_reference_dict(inputs, targets):
 
 
 # convert word index to vector
-def index2vec(index):
+def index2vec(index, tokenizer):
     if index <= 3:
         return token_vector[token_index[index]]
-    return model.word_vec(model.index2word[index])
+    return model.word_vec(tokenizer.index_word[index])
 
 
 # convert a list of indices to vectors
-def indices2vec(indices):
-    return [index2vec(int(index)) for index in indices]
+def indices2vec(indices, tokenizer):
+    return [index2vec(int(index), tokenizer) for index in indices]
 
 
 # input sequence to input & target vectors
@@ -274,7 +274,7 @@ def train_step(inputs, targets):
     with tf.GradientTape() as tape:
 
         if pre_trained_word2vec:
-            inputs = [indices2vec(indices) for indices in inputs]
+            inputs = [indices2vec(indices, input_tokenizer) for indices in inputs]
 
         if decoder_attention:
             enc_output, enc_hidden = encoder(inputs)
@@ -284,7 +284,7 @@ def train_step(inputs, targets):
         dec_hidden = enc_hidden
 
         if pre_trained_word2vec:
-            dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
+            dec_input = tf.expand_dims(tf.expand_dims(token_vector["<start>"], 0), 0)
             dec_input = tf.tile(dec_input, [targets.shape[0], 1, 1])
         else:
             dec_input = tf.expand_dims([target_tokenizer.word_index["<start>"]] * targets.shape[0], 1)
@@ -302,7 +302,7 @@ def train_step(inputs, targets):
 
             # using teacher forcing
             if pre_trained_word2vec:
-                dec_input = tf.expand_dims(indices2vec(targets[:, t]), 1)
+                dec_input = tf.expand_dims(indices2vec(targets[:, t], target_tokenizer), 1)
             else:
                 dec_input = tf.expand_dims(targets[:, t], 1)
 
@@ -319,7 +319,7 @@ def test_step(inputs, targets):
     enc_output = None
 
     if pre_trained_word2vec:
-        inputs = [indices2vec(indices) for indices in inputs]
+        inputs = [indices2vec(indices, input_tokenizer) for indices in inputs]
 
     if decoder_attention:
         enc_output, enc_hidden = encoder(inputs)
@@ -331,7 +331,7 @@ def test_step(inputs, targets):
     predicted_labels = []
 
     if pre_trained_word2vec:
-        dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
+        dec_input = tf.expand_dims(tf.expand_dims(token_vector["<start>"], 0), 0)
         dec_input = tf.tile(dec_input, [targets.shape[0], 1, 1])
     else:
         dec_input = tf.expand_dims([target_tokenizer.word_index["<start>"]] * targets.shape[0], 1)
@@ -350,7 +350,7 @@ def test_step(inputs, targets):
         predicted_labels.append(list(predicted.numpy()))
 
         if pre_trained_word2vec:
-            dec_input = tf.expand_dims(indices2vec(predicted), 1)
+            dec_input = tf.expand_dims(indices2vec(predicted, target_tokenizer), 1)
         else:
             dec_input = tf.expand_dims(predicted, 1)
 
@@ -600,7 +600,7 @@ def sample_test(sentence):
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=max_length_inp, padding="post")
 
     if pre_trained_word2vec:
-        inputs = [indices2vec(indices) for indices in inputs]
+        inputs = [indices2vec(indices, input_tokenizer) for indices in inputs]
     else:
         inputs = tf.convert_to_tensor(inputs)
 
@@ -612,7 +612,7 @@ def sample_test(sentence):
     dec_hidden = enc_hidden
 
     if pre_trained_word2vec:
-        dec_input = tf.expand_dims(tf.expand_dims(index2vec(target_tokenizer.word_index["<start>"]), 0), 0)
+        dec_input = tf.expand_dims(tf.expand_dims(token_vector["<start>"], 0), 0)
     else:
         dec_input = tf.expand_dims([target_tokenizer.word_index["<start>"]], 0)
 
@@ -636,7 +636,7 @@ def sample_test(sentence):
 
         # the predicted ID is fed back into the model
         if pre_trained_word2vec:
-            dec_input = tf.expand_dims([index2vec(predicted_id)], 1)
+            dec_input = tf.expand_dims([index2vec(predicted_id, target_tokenizer)], 1)
         else:
             dec_input = tf.expand_dims([predicted_id], 0)
 
