@@ -166,7 +166,7 @@ max_length_inp, max_length_target = max_length(input_vectors), max_length(target
 # creating training, val, test sets using an 70-20-10 split
 if mix_input_topic:
     input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
-    input_test, input_val, target_test, target_val = train_test_split(input_test, target_test, test_size=0.67)
+    input_val, input_test, target_val, target_test = train_test_split(input_test, target_test, test_size=0.33)
 else:
     input_train, input_test = train_test_split(list(reference_dict.keys()), test_size=0.3)
     input_val, input_test = train_test_split(input_test, test_size=0.33)
