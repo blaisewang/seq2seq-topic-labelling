@@ -59,6 +59,8 @@ if pre_trained_word2vec and "model" not in locals():
 
 # function for pre-processing the sentences
 def preprocess_sentence(sent):
+    sent = sent.replace("-", "_")
+
     if pre_trained_word2vec:
         return "<start> " + " ".join(topic if topic in vocab else "<unk>" for topic in sent.split()) + " <end>"
     return "<start> " + sent + " <end>"
