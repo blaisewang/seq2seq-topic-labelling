@@ -35,7 +35,7 @@ class Decoder(tf.keras.Model):
         super(Decoder, self).__init__()
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_size)
         self.rnn = rnn_layer(dec_units)
-        self.fc = tf.keras.layers.Dense(vocab_size)
+        self.fc = tf.keras.layers.Dense(vocab_size, activation="softmax")
 
     def call(self, x, **kwargs):
         # x shape == (batch_size, 1, embedding_dim)

@@ -36,7 +36,7 @@ class Decoder(tf.keras.Model):
         super(Decoder, self).__init__()
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_size)
         self.rnn = rnn_layer(dec_units * 2)
-        self.fc = tf.keras.layers.Dense(vocab_size)
+        self.fc = tf.keras.layers.Dense(vocab_size, activation="softmax")
 
         # attention mechanism
         self.attention = BahdanauAttention(dec_units)
