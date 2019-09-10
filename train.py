@@ -31,9 +31,6 @@ embedding_size = 300
 # True for applying the early stopping
 early_stopping = True
 
-# True for splitting the same input sequences into different data sets
-mix_input_topic = False
-
 # True for applying the attention mechanism
 decoder_attention = Decoder.attention_mechanism
 
@@ -164,21 +161,17 @@ target_vectors, target_tokenizer = tokenize(target_lang)
 max_length_inp, max_length_target = max_length(input_vectors), max_length(target_vectors)
 
 # creating training, val, test sets using an 70-20-10 split
-if mix_input_topic:
-    input_train, input_test, target_train, target_test = train_test_split(input_vectors, target_vectors, test_size=0.3)
-    input_val, input_test, target_val, target_test = train_test_split(input_test, target_test, test_size=0.33)
-else:
-    input_train, input_test = train_test_split(list(reference_dict.keys()), test_size=0.3)
-    input_val, input_test = train_test_split(input_test, test_size=0.33)
+input_train, input_test = train_test_split(list(reference_dict.keys()), test_size=0.3)
+input_val, input_test = train_test_split(input_test, test_size=0.33)
 
-    train_vocab = set([word for sentence in input_train for word in sentence.split()])
-    test_vocab = set([word for sentence in input_test for word in sentence.split()])
-    intersect_vocab = train_vocab.intersection(test_vocab)
-    print("%.2f%% of words in the test set are unknown" % ((1 - len(intersect_vocab) / len(test_vocab)) * 100))
+train_vocab = set([word for sentence in input_train for word in sentence.split()])
+test_vocab = set([word for sentence in input_test for word in sentence.split()])
+intersect_vocab = train_vocab.intersection(test_vocab)
+print("%.2f%% of words in the test set are unknown" % ((1 - len(intersect_vocab) / len(test_vocab)) * 100))
 
-    input_train, target_train = input2vec(input_train)
-    input_val, target_val = input2vec(input_val)
-    input_test, target_test = input2vec(input_test)
+input_train, target_train = input2vec(input_train)
+input_val, target_val = input2vec(input_val)
+input_test, target_test = input2vec(input_test)
 
 BATCH_SIZE = 64
 buffer_size = len(input_train)
@@ -525,7 +518,7 @@ for epoch in range(EPOCH):
     for inp, target in train_dataset.take(train_steps_per_epoch):
         train_step(inp, target)
 
-    blue_1, gleu_1, nist_1, rouge_1l_dict = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
+    bleu_1, gleu_1, nist_1, rouge_1l_dict = evaluation_metrics(val_dataset, val_steps_per_epoch, len(input_val))
 
     print("Train Loss: %.4f Accuracy: %.4f" % (train_loss.result(), train_accuracy.result()))
     print("Validation Loss: %.4f Accuracy: %.4f" % (test_loss.result(), test_accuracy.result()))
@@ -535,7 +528,7 @@ for epoch in range(EPOCH):
     train_acc.append(train_accuracy.result().numpy())
     val_l.append(test_loss.result().numpy())
     val_acc.append(test_accuracy.result().numpy())
-    bleu_scores.append(blue_1)
+    bleu_scores.append(bleu_1)
     gleu_scores.append(gleu_1)
     nist_scores.append(nist_1)
     rouge_1l_dicts.append(rouge_1l_dict)
@@ -544,7 +537,7 @@ for epoch in range(EPOCH):
     val_loss = test_loss.result().numpy()
 
     if early_stopping:
-        if val_loss > last_loss or abs(val_loss - last_loss) < 1e-4:
+        if val_loss > last_loss or abs(val_loss - last_loss) < 1e-3:
             stop_flags.append(True)
         else:
             stop_flags.clear()
