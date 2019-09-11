@@ -8,8 +8,6 @@ import csv
 import os
 import re
 
-THRESHOLD = 1.5
-
 DUMMY_LINE = "228.0	#	-1.0"
 
 
@@ -35,9 +33,9 @@ def clean_word(words):
 
 create_directory("./input")
 
-for THRESHOLD in [0, 0.5, 1.0, 1.5, 2.0]:
+for threshold in [0, 0.5, 1.0, 1.5, 2.0]:
 
-    output_path = "./input/data_%s.csv" % str(THRESHOLD).replace(".", "")
+    output_path = "./input/data_%s.csv" % str(threshold).replace(".", "")
 
     # topics processing
     with open("./data/topics.csv", "r") as topics_in, open("./data/dataset_text.txt", "r") as labels_in, open(
@@ -76,5 +74,5 @@ for THRESHOLD in [0, 0.5, 1.0, 1.5, 2.0]:
             # score parsing
             score = float(line[2].strip("\n"))
             # keep relevant labels only
-            if score >= THRESHOLD:
+            if score >= threshold:
                 writer.writerow([topics[index], clean_word(line[1].split())])
