@@ -141,7 +141,7 @@ def input2vec(data):
             targets.append(target_seq)
 
     inputs = input_tokenizer.texts_to_sequences(inputs)
-    targets = input_tokenizer.texts_to_sequences(targets)
+    targets = target_tokenizer.texts_to_sequences(targets)
 
     inputs = tf.keras.preprocessing.sequence.pad_sequences(inputs, maxlen=max_length_inp, padding="post")
     targets = tf.keras.preprocessing.sequence.pad_sequences(targets, maxlen=max_length_target, padding="post")
