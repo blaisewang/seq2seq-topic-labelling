@@ -1,7 +1,7 @@
 gdown
 gensim
 rouge
-tensorflow == 1.15.2
+tensorflow == 2.5.0
 matplotlib
 nltk >= 3.4.5
 numpy
